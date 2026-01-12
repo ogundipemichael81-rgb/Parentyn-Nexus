@@ -71,7 +71,8 @@ export const generateGameContent = async (
     Instructions:
     Generate a JSON object containing:
     1. "title": An engaging title for the module.
-    2. "lessonNote": A structured markdown lesson note (use headings, bullet points).
+    2. "lessonNote": A structured markdown lesson note. 
+       - ${category === 'quantitative' ? 'CRITICAL: Use LaTeX for ALL formulas and math expressions. Wrap inline math in single dollar signs ($...$) and block math in double dollar signs ($$...$$). Do NOT use \\( ... \\) or \\[ ... \\].' : 'Use clear headings and bullet points.'}
     3. "metadata": { "difficulty": "easy"|"medium"|"hard", "estimatedTime": number (minutes) }
     4. "levels": An array of exactly 3 levels in this order:
        - Level 1: "flashcards" (Concept Deck). Array of {front, back}.
@@ -90,10 +91,11 @@ export const generateGameContent = async (
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-preview', // Using Pro for complex content generation
+            model: 'gemini-3-pro-preview', 
             contents: { parts },
             config: {
                 responseMimeType: "application/json",
+                temperature: 1.0, // High temperature for creativity
             }
         });
 
@@ -130,14 +132,6 @@ export const generateGameContent = async (
                     });
                 } else if (l.type === 'quiz' || (!l.type && (l.questions || l.quiz_questions))) {
                     const questions = l.questions || l.quiz_questions || [];
-                    // Flatten quiz into multiple levels if API returned multiple questions in one object, 
-                    // BUT our UI expects one question per 'quiz' level usually? 
-                    // Actually Types.ts defines Level as having `question` (singular) and `options`.
-                    // So we should map each question to a separate level or just pick one?
-                    // The prompt asked for "levels" array. If the model returned a single "quiz" level with multiple questions, we must split it.
-                    // However, `data.levels` loop implies the model structures it as levels. 
-                    // If the model followed instructions, it might have returned one level object with multiple questions which isn't standard in our `Level` type (singular `question`).
-                    // Let's assume for a robust fix: If the level object has `questions` array, we create multiple levels.
                     if (Array.isArray(questions) && questions.length > 0) {
                          questions.forEach((q: any, qi: number) => {
                              levels.push({
@@ -155,7 +149,6 @@ export const generateGameContent = async (
                              });
                          });
                     } else if (l.question) {
-                         // Single question format
                          levels.push({
                             id: levelId,
                             title: l.title || "Quiz Challenge",
@@ -217,6 +210,7 @@ export const extendLessonNote = async (currentNote: string, subject: string, cla
         - Output ONLY the new additional content.
         - Do NOT repeat the existing note content provided below.
         - Start with a clear Markdown Header (### Title of Extension).
+        - Use proper LaTeX formatting for math ($...$ for inline, $$...$$ for block).
         - Maintain the same markdown formatting style.
         - Provide high-quality, rigorous academic content.
         
@@ -229,7 +223,8 @@ export const extendLessonNote = async (currentNote: string, subject: string, cla
             model: 'gemini-3-pro-preview',
             contents: prompt,
             config: {
-                thinkingConfig: { thinkingBudget: 1024 }
+                thinkingConfig: { thinkingBudget: 1024 },
+                temperature: 1.0, 
             }
         });
         return response.text || "";
@@ -254,6 +249,8 @@ export const generateSpecificLevel = async (
         You are a game level designer for ${classLevel} school ${subject}.
         Base your content STRICTLY on this Lesson Note:
         "${lessonNote.substring(0, 5000)}..."
+        
+        CRITICAL: Ensure any math or physics formulas use correct LaTeX format ($...$).
     `;
 
     let schema: Schema = { type: Type.OBJECT, properties: {}, required: [] };
@@ -290,7 +287,7 @@ export const generateSpecificLevel = async (
             }
         };
     } else if (activityType === 'quiz' || activityType === 'question_bank') {
-        const count = activityType === 'question_bank' ? 5 : 3; // Reduced question bank size slightly to ensure reliability
+        const count = activityType === 'question_bank' ? 5 : 3; 
         prompt += `\nGenerate ${count} distinct multiple choice questions. ${activityType === 'question_bank' ? 'Create a question bank covering different aspects of the note.' : 'Create a short assessment quiz.'}`;
         schema = {
             type: Type.OBJECT,
@@ -356,7 +353,8 @@ export const generateSpecificLevel = async (
         contents: prompt,
         config: {
             responseMimeType: "application/json",
-            responseSchema: schema
+            responseSchema: schema,
+            temperature: 1.0 // High temp
         }
     });
 

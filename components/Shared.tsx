@@ -90,21 +90,21 @@ export const RichTextRenderer: React.FC<{ content: string, className?: string }>
       // Headers
       if (line.startsWith('### ')) {
         if (listItems.length > 0) { elements.push(<ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); listItems = []; }
-        elements.push(<h3 key={index} className="text-lg font-bold text-yellow-400 mt-6 mb-2">{renderLatexInline(line.replace('### ', ''))}</h3>);
+        elements.push(<h3 key={index} className="text-lg font-bold text-yellow-400 mt-6 mb-2">{renderContentWithLatex(line.replace('### ', ''))}</h3>);
       } 
       else if (line.startsWith('## ')) {
         if (listItems.length > 0) { elements.push(<ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); listItems = []; }
-        elements.push(<h4 key={index} className="text-md font-bold text-blue-300 mt-4 mb-2">{renderLatexInline(line.replace('## ', ''))}</h4>);
+        elements.push(<h4 key={index} className="text-md font-bold text-blue-300 mt-4 mb-2">{renderContentWithLatex(line.replace('## ', ''))}</h4>);
       }
       // Lists
       else if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
         const content = line.trim().substring(2);
-        listItems.push(<li key={`li-${index}`} className="text-white/90 leading-relaxed pl-1">{renderLatexInline(content)}</li>);
+        listItems.push(<li key={`li-${index}`} className="text-white/90 leading-relaxed pl-1">{renderContentWithLatex(content)}</li>);
       }
       // Standard Paragraphs
       else if (line.trim().length > 0) {
         if (listItems.length > 0) { elements.push(<ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); listItems = []; }
-        elements.push(<p key={index} className="mb-3 text-white/90 leading-relaxed">{renderLatexInline(line)}</p>);
+        elements.push(<p key={index} className="mb-3 text-white/90 leading-relaxed">{renderContentWithLatex(line)}</p>);
       }
     });
     
@@ -113,49 +113,61 @@ export const RichTextRenderer: React.FC<{ content: string, className?: string }>
     return elements;
   };
 
-  const renderLatexInline = (text: string): React.ReactNode => {
-    // Split by bold syntax **text**
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    
+  // 2. Tokenize logic to separate raw text from LaTeX math blocks
+  const renderContentWithLatex = (text: string): React.ReactNode => {
+    // Regex matches $$...$$ OR $...$
+    // Using a capture group to include the delimiter in the split results for easier processing
+    const regex = /(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$)/g;
+    const parts = text.split(regex);
+
     return parts.map((part, i) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={i} className="text-white font-bold">{renderLatexOnly(part.slice(2, -2))}</strong>;
+      if (part.startsWith('$$') && part.endsWith('$$')) {
+        // Block math
+        return <LatexSpan key={i} latex={part.slice(2, -2)} display={true} />;
+      } 
+      else if (part.startsWith('$') && part.endsWith('$')) {
+        // Inline math
+        return <LatexSpan key={i} latex={part.slice(1, -1)} display={false} />;
+      } 
+      else {
+        // Text segment: Process markdown styles (bold)
+        return <span key={i}>{processBold(part)}</span>;
       }
-      return <span key={i}>{renderLatexOnly(part)}</span>;
     });
   };
 
-  const renderLatexOnly = (text: string): React.ReactNode => {
-      if (!text) return null;
-      // Very basic check to see if we need katex
-      if (!text.includes('$') && !text.includes('\\')) return text;
-
-      return <LatexSpan text={text} />;
+  const processBold = (text: string): React.ReactNode => {
+    // Split by bold syntax **text**
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="text-white font-bold">{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
   };
 
   return <div className={`rich-text ${className}`}>{processMarkdown(content || "")}</div>;
 };
 
-// Isolated component for KaTeX to use refs properly
-const LatexSpan: React.FC<{ text: string }> = ({ text }) => {
+// Isolated component for KaTeX to ensure precision and prevent re-render duplication issues
+const LatexSpan: React.FC<{ latex: string, display: boolean }> = ({ latex, display }) => {
     const spanRef = useRef<HTMLSpanElement>(null);
     
     useEffect(() => {
         if (spanRef.current) {
             try {
-                katex.render(text, spanRef.current, {
+                katex.render(latex, spanRef.current, {
                     throwOnError: false,
-                    output: 'mathml',
-                    delimiters: [
-                        {left: '$$', right: '$$', display: false}, // Treat block as inline for flow
-                        {left: '$', right: '$', display: false}
-                    ]
+                    displayMode: display,
+                    output: 'mathml', // Better for accessibility and performance usually
                 });
             } catch (e) {
-                spanRef.current.innerText = text;
+                console.error("KaTeX Error:", e);
+                spanRef.current.innerText = latex; // Fallback to raw tex
             }
         }
-    }, [text]);
+    }, [latex, display]);
 
     return <span ref={spanRef} />;
 }
