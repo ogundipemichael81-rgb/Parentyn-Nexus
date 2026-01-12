@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle, ListOrdered, GripVertical } from 'lucide-react';
 import { Level, Flashcard, MatchingPair } from '../types';
 import { RichTextRenderer } from './Shared';
 
@@ -18,6 +18,7 @@ export const GameplayView: React.FC<GameplayViewProps> = ({ level, onComplete })
         {level.type === 'flashcards' && <FlashcardGame level={level} onComplete={onComplete} />}
         {level.type === 'matching' && <MatchingGame level={level} onComplete={onComplete} />}
         {level.type === 'fill_blank' && <FillBlankGame level={level} onComplete={onComplete} />}
+        {level.type === 'arrange' && <ArrangeGame level={level} onComplete={onComplete} />}
       </div>
     </div>
   );
@@ -31,6 +32,7 @@ const Header: React.FC<{ level: Level }> = ({ level }) => {
       case 'flashcards': return Layers;
       case 'matching': return Puzzle;
       case 'fill_blank': return PenTool;
+      case 'arrange': return ListOrdered;
       default: return HelpCircle;
     }
   };
@@ -371,6 +373,119 @@ const FillBlankGame: React.FC<{ level: Level, onComplete: (c: boolean) => void }
       )}
     </div>
   );
+};
+
+// 5. Arrange (Sequence) Game
+const ArrangeGame: React.FC<{ level: Level, onComplete: (c: boolean) => void }> = ({ level, onComplete }) => {
+    const [orderedSteps, setOrderedSteps] = useState<string[]>([]);
+    const [checkStatus, setCheckStatus] = useState<'idle' | 'success' | 'error'>('idle');
+    const dragItem = useRef<number | null>(null);
+    const dragOverItem = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (level.steps) {
+            // Shuffle steps on mount
+            const shuffled = [...level.steps].sort(() => Math.random() - 0.5);
+            setOrderedSteps(shuffled);
+        }
+    }, [level]);
+
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>, position: number) => {
+        dragItem.current = position;
+        e.currentTarget.classList.add('opacity-50');
+    };
+
+    const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, position: number) => {
+        dragOverItem.current = position;
+    };
+
+    const handleDragEnd = (e: React.DragEvent<HTMLDivElement>) => {
+        e.currentTarget.classList.remove('opacity-50');
+        
+        if (dragItem.current !== null && dragOverItem.current !== null) {
+            const copyListItems = [...orderedSteps];
+            const dragItemContent = copyListItems[dragItem.current];
+            copyListItems.splice(dragItem.current, 1);
+            copyListItems.splice(dragOverItem.current, 0, dragItemContent);
+            dragItem.current = null;
+            dragOverItem.current = null;
+            setOrderedSteps(copyListItems);
+            setCheckStatus('idle'); // Reset checking status on move
+        }
+    };
+
+    const checkOrder = () => {
+        // Compare orderedSteps with level.steps (Answer Key)
+        if (!level.steps) return;
+        
+        const isCorrect = orderedSteps.every((val, index) => val === level.steps![index]);
+        
+        if (isCorrect) {
+            setCheckStatus('success');
+            setTimeout(() => onComplete(true), 2500);
+        } else {
+            setCheckStatus('error');
+            setTimeout(() => setCheckStatus('idle'), 2000);
+        }
+    };
+
+    if (!orderedSteps.length) return <div className="text-white">Loading...</div>;
+
+    return (
+        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/20 shadow-2xl relative overflow-hidden">
+             {checkStatus === 'success' && (
+                 <div className="absolute inset-0 bg-green-500/20 z-10 flex items-center justify-center pointer-events-none animate-in fade-in">
+                     <div className="bg-green-500 rounded-full p-4 animate-bounce">
+                         <Check className="w-12 h-12 text-white" />
+                     </div>
+                 </div>
+             )}
+
+             <p className="text-white/60 text-center mb-6 text-sm">Drag and drop the blocks to arrange them in the correct sequence.</p>
+
+             <div className="space-y-3">
+                 {orderedSteps.map((step, index) => {
+                     // Determine if this specific block is in the correct position compared to answer key
+                     // ONLY show this when status is error
+                     const isCorrectPos = level.steps && level.steps[index] === step;
+                     const borderColor = checkStatus === 'error' 
+                        ? (isCorrectPos ? 'border-green-500/50' : 'border-red-500/50')
+                        : 'border-white/10';
+                     const bgClass = checkStatus === 'error' && !isCorrectPos ? 'bg-red-500/10' : 'bg-white/5';
+
+                     return (
+                         <div
+                            key={index}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, index)}
+                            onDragEnter={(e) => handleDragEnter(e, index)}
+                            onDragEnd={handleDragEnd}
+                            onDragOver={(e) => e.preventDefault()}
+                            className={`p-4 rounded-xl border ${borderColor} ${bgClass} hover:bg-white/10 cursor-move transition-all flex items-center gap-4 group`}
+                         >
+                             <div className="text-white/30 cursor-grab active:cursor-grabbing">
+                                 <GripVertical className="w-5 h-5" />
+                             </div>
+                             <div className="flex-1 text-white font-medium">
+                                 <RichTextRenderer content={step} />
+                             </div>
+                         </div>
+                     );
+                 })}
+             </div>
+
+             <button
+                onClick={checkOrder}
+                className={`w-full mt-8 py-4 font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 
+                    ${checkStatus === 'error' 
+                        ? 'bg-red-500 hover:bg-red-600 text-white animate-shake' 
+                        : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 text-white'
+                    }`}
+             >
+                 {checkStatus === 'error' ? 'Incorrect Order - Try Again' : 'Check My Order'}
+             </button>
+        </div>
+    );
 };
 
 const ResultFeedback: React.FC<{ correct?: boolean, answer?: string }> = ({ correct, answer }) => (

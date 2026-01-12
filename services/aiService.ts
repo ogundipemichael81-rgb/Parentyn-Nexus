@@ -361,6 +361,21 @@ export const generateSpecificLevel = async (
                 }
             }
         };
+    } else if (activityType === 'arrange') {
+        prompt += `\nGenerate exactly 4 distinct, chronological or logical steps based on a process in the text. (e.g., Steps of Photosynthesis, Timeline of an Event, Order of Operations). Return them in the CORRECT order.`;
+        schema = {
+            type: Type.OBJECT,
+            properties: {
+                sequence_title: { type: Type.STRING },
+                sequence_context: { type: Type.STRING },
+                steps: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: "Exactly 4 steps in the correct order"
+                }
+            },
+            required: ["sequence_title", "steps"]
+        };
     } else if (activityType === 'quiz' || activityType === 'question_bank') {
         const count = activityType === 'question_bank' ? 5 : 3; 
         prompt += `\nGenerate ${count} distinct multiple choice questions. ${activityType === 'question_bank' ? 'Create a question bank covering different aspects of the note.' : 'Create a short assessment quiz.'}`;
@@ -458,6 +473,16 @@ export const generateSpecificLevel = async (
             points: 100,
             challenge: "Connect the relationships",
             pairs: data.matching_pairs.map((p: any, i: number) => ({ id: `pair_${i}`, left: p.left, right: p.right }))
+        });
+    }
+    if (data.steps && Array.isArray(data.steps)) {
+        levels.push({
+            id: `lvl_arr_${timestamp}`,
+            title: data.sequence_title || "Arrange the Blocks",
+            type: "arrange",
+            points: 75,
+            challenge: data.sequence_context || "Order the steps correctly.",
+            steps: data.steps
         });
     }
     if (data.fill_in_blanks) {

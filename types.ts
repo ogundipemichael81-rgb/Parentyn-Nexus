@@ -1,7 +1,7 @@
 
 export type ViewState = 'dashboard' | 'studio' | 'modules' | 'students';
 export type UserRole = 'teacher' | 'student';
-export type ActivityType = 'quiz' | 'flashcards' | 'matching' | 'fill_blank';
+export type ActivityType = 'quiz' | 'flashcards' | 'matching' | 'fill_blank' | 'arrange';
 export type ClassLevel = 'primary' | 'secondary';
 export type ModuleCategory = 'qualitative' | 'quantitative';
 export type ModuleStatus = 'draft' | 'published';
@@ -69,6 +69,9 @@ export interface Level {
   // Fill in Blank
   sentence?: string;
   correctAnswer?: string;
+
+  // Arrange (Sequence)
+  steps?: string[];
 }
 
 export interface ModuleMetadata {

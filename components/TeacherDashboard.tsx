@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio } from 'lucide-react';
+import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio, ListOrdered } from 'lucide-react';
 import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level, Session } from '../types';
 import { GAME_TEMPLATES } from '../constants';
 import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote, processDocumentToNote } from '../services/aiService';
@@ -131,6 +131,13 @@ const LevelEditor: React.FC<{ level: Level; onSave: (l: Level) => void }> = ({ l
     setEditedLevel(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleStepChange = (index: number, text: string) => {
+      if (!editedLevel.steps) return;
+      const newSteps = [...editedLevel.steps];
+      newSteps[index] = text;
+      handleChange('steps', newSteps);
+  };
+
   return (
     <div className="space-y-6 text-white p-2">
       <div className="space-y-2">
@@ -186,6 +193,24 @@ const LevelEditor: React.FC<{ level: Level; onSave: (l: Level) => void }> = ({ l
                 />
             </div>
         </>
+      )}
+
+      {editedLevel.type === 'arrange' && editedLevel.steps && (
+          <div className="space-y-4">
+               <label className="text-xs uppercase text-gray-400 font-bold">Steps (In Correct Order)</label>
+               {editedLevel.steps.map((step, i) => (
+                   <div key={i} className="flex items-center gap-2">
+                       <span className="text-xs font-bold text-white/50 w-6">{i+1}.</span>
+                       <input
+                            type="text"
+                            value={step}
+                            onChange={(e) => handleStepChange(i, e.target.value)}
+                            className="flex-1 bg-black/20 border border-white/10 rounded-lg p-2 text-sm focus:border-yellow-400 outline-none"
+                        />
+                   </div>
+               ))}
+               <p className="text-xs text-white/40 italic">Note: These will be shuffled for students.</p>
+          </div>
       )}
 
       <button
@@ -830,6 +855,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
       case 'flashcards': return <Layers className="w-4 h-4 text-blue-300" />;
       case 'matching': return <Puzzle className="w-4 h-4 text-green-300" />;
       case 'fill_blank': return <PenTool className="w-4 h-4 text-pink-300" />;
+      case 'arrange': return <ListOrdered className="w-4 h-4 text-indigo-300" />;
       default: return <HelpCircle className="w-4 h-4 text-yellow-300" />;
     }
   };
@@ -840,6 +866,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
         case 'matching': return "Association: Students link related concepts to build neural connections.";
         case 'fill_blank': return "Mastery: Students apply knowledge to complete sentences or equations.";
         case 'quiz': return "Application: Students solve problems or answer scenarios.";
+        case 'arrange': return "Logic & Sequence: Students order steps of a process chronologically.";
         default: return "";
       }
   };
@@ -1375,6 +1402,9 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                                              </button>
                                              <button onClick={() => handleAddAILevel('fill_blank')} className="w-full text-left px-3 py-2 text-white hover:bg-white/10 rounded-lg text-sm flex items-center gap-2">
                                                  <PenTool className="w-4 h-4 text-pink-400" /> Fill in Blanks (Mastery)
+                                             </button>
+                                             <button onClick={() => handleAddAILevel('arrange')} className="w-full text-left px-3 py-2 text-white hover:bg-white/10 rounded-lg text-sm flex items-center gap-2">
+                                                 <ListOrdered className="w-4 h-4 text-indigo-400" /> Arrange (Sequence)
                                              </button>
                                              <div className="h-px bg-white/10 my-1"></div>
                                              <button onClick={() => handleAddAILevel('boss_level')} className="w-full text-left px-3 py-2 text-white hover:bg-white/10 rounded-lg text-sm flex items-center gap-2">
