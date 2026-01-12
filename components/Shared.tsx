@@ -1,6 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { LucideIcon, Check } from 'lucide-react';
-import katex from 'katex';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 interface NavButtonProps {
   icon: LucideIcon;
@@ -79,111 +81,18 @@ export const Step: React.FC<StepProps> = ({ num, label, active, completed }) => 
 // --- Rich Text & LaTeX Renderer ---
 
 export const RichTextRenderer: React.FC<{ content: string, className?: string }> = ({ content, className = "" }) => {
-  
-  // 1. Core Tokenizer: Split by Block Math ($$...$$) first to preserve multi-line formulas
-  const tokenizeBlocks = (text: string) => {
-      // Regex for block math $$ ... $$
-      const blockRegex = /(\$\$[\s\S]+?\$\$)/g;
-      const parts = text.split(blockRegex);
-      
-      return parts.map((part, index) => {
-          if (part.startsWith('$$') && part.endsWith('$$')) {
-              return <LatexSpan key={`latex-block-${index}`} latex={part.slice(2, -2)} display={true} />;
-          } else {
-              return <React.Fragment key={`md-block-${index}`}>{processMarkdown(part)}</React.Fragment>;
-          }
-      });
-  };
-
-  // 2. Process Markdown syntax on text chunks
-  const processMarkdown = (text: string) => {
-    const lines = text.split('\n');
-    const elements: React.ReactNode[] = [];
-    
-    let listItems: React.ReactNode[] = [];
-    
-    const flushList = (keyPrefix: string) => {
-        if (listItems.length > 0) { 
-            elements.push(<ul key={`${keyPrefix}-ul`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); 
-            listItems = []; 
-        }
-    };
-
-    lines.forEach((line, index) => {
-      // Headers
-      if (line.startsWith('### ')) {
-        flushList(`h3-${index}`);
-        elements.push(<h3 key={`h3-${index}`} className="text-lg font-bold text-yellow-400 mt-6 mb-2">{renderInlineMath(line.replace('### ', ''))}</h3>);
-      } 
-      else if (line.startsWith('## ')) {
-        flushList(`h4-${index}`);
-        elements.push(<h4 key={`h4-${index}`} className="text-md font-bold text-blue-300 mt-4 mb-2">{renderInlineMath(line.replace('## ', ''))}</h4>);
-      }
-      // Lists
-      else if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
-        const content = line.trim().substring(2);
-        listItems.push(<li key={`li-${index}`} className="text-white/90 leading-relaxed pl-1">{renderInlineMath(content)}</li>);
-      }
-      // Standard Paragraphs
-      else if (line.trim().length > 0) {
-        flushList(`p-${index}`);
-        elements.push(<p key={`p-${index}`} className="mb-3 text-white/90 leading-relaxed">{renderInlineMath(line)}</p>);
-      }
-    });
-    
-    flushList('end');
-
-    return elements;
-  };
-
-  // 3. Render Inline Math ($...$) and Formatting (**bold**)
-  const renderInlineMath = (text: string): React.ReactNode => {
-    // Regex matches inline math $...$
-    const inlineRegex = /(\$[^\n$]+?\$)/g;
-    const parts = text.split(inlineRegex);
-
-    return parts.map((part, i) => {
-      if (part.startsWith('$') && part.endsWith('$')) {
-        return <LatexSpan key={i} latex={part.slice(1, -1)} display={false} />;
-      } 
-      else {
-        return <span key={i}>{processBold(part)}</span>;
-      }
-    });
-  };
-
-  const processBold = (text: string): React.ReactNode => {
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={i} className="text-white font-bold">{part.slice(2, -2)}</strong>;
-      }
-      return part;
-    });
-  };
-
-  return <div className={`rich-text ${className}`}>{tokenizeBlocks(content || "")}</div>;
+  return (
+    <div className={`rich-text ${className}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          // Custom overrides can be added here if CSS class based styling in index.html isn't enough
+          // Currently, index.html defines .rich-text styles for h3, h4, p, etc.
+        }}
+      >
+        {content || ""}
+      </ReactMarkdown>
+    </div>
+  );
 };
-
-// Isolated component for KaTeX to ensure precision and prevent re-render duplication issues
-const LatexSpan: React.FC<{ latex: string, display: boolean }> = ({ latex, display }) => {
-    const spanRef = useRef<HTMLSpanElement>(null);
-    
-    useEffect(() => {
-        if (spanRef.current) {
-            spanRef.current.innerHTML = ''; // Clear to prevent duplication
-            try {
-                katex.render(latex, spanRef.current, {
-                    throwOnError: false,
-                    displayMode: display,
-                    output: 'html', // Changed to HTML for better browser support and visibility
-                });
-            } catch (e) {
-                console.error("KaTeX Error:", e);
-                spanRef.current.innerText = latex; // Fallback
-            }
-        }
-    }, [latex, display]);
-
-    return <span ref={spanRef} />;
-}

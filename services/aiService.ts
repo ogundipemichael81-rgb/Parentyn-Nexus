@@ -58,22 +58,22 @@ export const generateGameContent = async (
 
     const contextDesc = customContext || template.theme;
     
-    // Strict Latex Instructions based on category
-    const mathInstructions = category === 'quantitative' 
-        ? `
-        CRITICAL MATHEMATICAL FORMATTING RULES:
-        1. You are a strict Mathematician.
-        2. Write ALL formulas, variables, and numbers using standard LaTeX syntax.
-        3. ALWAYS wrap inline math in single dollar signs (e.g., $E=mc^2$).
-        4. ALWAYS wrap block math in double dollar signs (e.g., $$x = \\frac{-b}{2a}$$).
-        5. NEVER write raw LaTeX commands (like \\frac, \\bar, \\hat) without the surrounding dollar signs.
-        6. NO REDUNDANCY: Do NOT write the text pronunciation next to the symbol. 
-           - INCORRECT: $\\bar{x}$ (x-bar)
-           - INCORRECT: $\\pi$ (pi)
-           - CORRECT: $\\bar{x}$
-           - CORRECT: $\\pi$
-        ` 
-        : 'Use clear headings and bullet points.';
+    const formattingInstructions = `
+    HEURISTIC PARSING & FORMATTING RULES:
+    1. Analyze the subject matter:
+       - If QUANTITATIVE (Physics, Math, Chemistry, Accounting):
+         * STRICTLY use LaTeX for ALL formulas, equations, and variables.
+         * Inline math: $E=mc^2$
+         * Block math: $$x = \\frac{-b}{2a}$$
+       - If QUALITATIVE (History, Literature, Intro Biology):
+         * Do NOT use LaTeX for standard text.
+         * Use standard Markdown for emphasis (**bold**, *italic*).
+    2. Headings:
+       - Standardize section titles using #### (e.g. #### Introduction).
+    3. Constraint:
+       - Only apply LaTeX math-block rendering to segments containing mathematical symbols, variables, or chemical equations.
+       - Do not attempt to "mathify" standard prose.
+    `;
 
     const prompt = `
     Role: Curriculum Expert & Game Designer.
@@ -88,8 +88,8 @@ export const generateGameContent = async (
     Instructions:
     Generate a JSON object containing:
     1. "title": An engaging title for the module.
-    2. "lessonNote": A structured markdown lesson note. 
-       ${mathInstructions}
+    2. "lessonNote": A structured markdown lesson note following these rules:
+       ${formattingInstructions}
     3. "metadata": { "difficulty": "easy"|"medium"|"hard", "estimatedTime": number (minutes) }
     4. "levels": An array of exactly 3 levels in this order:
        - Level 1: "flashcards" (Concept Deck). Array of {front, back}.
@@ -226,11 +226,10 @@ export const extendLessonNote = async (currentNote: string, subject: string, cla
         RULES:
         - Output ONLY the new additional content.
         - Do NOT repeat the existing note content provided below.
-        - Start with a clear Markdown Header (### Title of Extension).
-        - STRICT LATEX RULES: 
-          1. Wrap all formulas in $...$ (inline) or $$...$$ (block).
-          2. Do not leave raw LaTeX (like \\frac) unwrapped.
-          3. Do not add redundant text explanations like '$\\alpha$ (alpha)'. Just write '$\\alpha$'.
+        - Start with a clear Markdown Header (#### Title of Extension).
+        - HEURISTIC FORMATTING:
+          * If content is math/science: Use LaTeX for variables ($x$) and equations ($$y=mx+b$$).
+          * If content is qualitative: Use standard markdown.
         - Maintain the same markdown formatting style.
         - Provide high-quality, rigorous academic content.
         
@@ -270,10 +269,11 @@ export const generateSpecificLevel = async (
         Base your content STRICTLY on this Lesson Note:
         "${lessonNote.substring(0, 5000)}..."
         
-        CRITICAL LATEX RULES:
+        CRITICAL FORMATTING RULES:
         1. Ensure any math or physics formulas use correct LaTeX format ($...$).
         2. NEVER write 'x-bar' or 'alpha' as text next to the symbol. Just use the symbol $\\bar{x}$.
         3. Do not write raw LaTeX commands without dollar signs.
+        4. If content is purely text-based (History, English), do not force LaTeX.
     `;
 
     let schema: Schema = { type: Type.OBJECT, properties: {}, required: [] };
