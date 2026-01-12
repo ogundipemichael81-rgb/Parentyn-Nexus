@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio } from 'lucide-react';
 import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level, Session } from '../types';
 import { GAME_TEMPLATES } from '../constants';
-import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote } from '../services/aiService';
+import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote, processDocumentToNote } from '../services/aiService';
 import { sessionManager } from '../services/sessionManager';
 import { useSessionSync } from '../hooks/useSessionSync';
 import { NavButton, StatCard, Step, RichTextRenderer } from './Shared';
@@ -549,6 +549,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
   const [editDiff, setEditDiff] = useState('medium');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRefNote = useRef<HTMLInputElement>(null);
 
   // Initialize Edit Mode
   useEffect(() => {
@@ -580,6 +581,31 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleNoteFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !generatedModule) return;
+      
+      setIsProcessingAction(true);
+      try {
+          const reader = new FileReader();
+          reader.onload = async (ev) => {
+              const base64 = (ev.target?.result as string).split(',')[1];
+              const noteContent = await processDocumentToNote(
+                { mimeType: file.type, data: base64 }, 
+                subject || "General", 
+                classLevel || "secondary"
+              );
+              
+              setGeneratedModule(prev => prev ? ({ ...prev, lessonNote: noteContent }) : null);
+              setIsProcessingAction(false);
+          };
+          reader.readAsDataURL(file);
+      } catch (err) {
+          console.error(err);
+          setIsProcessingAction(false);
+      }
   };
 
   const handleGenerate = async () => {
@@ -1274,6 +1300,14 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                              <div className="flex justify-between items-center">
                                  <h4 className="text-purple-300 text-xs font-bold uppercase tracking-wider">Generated Lesson Material</h4>
                                  <div className="flex gap-2">
+                                     <button 
+                                         onClick={() => fileInputRefNote.current?.click()}
+                                         className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded border border-white/10 flex items-center gap-1 transition"
+                                     >
+                                         <Upload className="w-3 h-3" /> Import Note
+                                     </button>
+                                     <input type="file" ref={fileInputRefNote} className="hidden" accept="application/pdf,image/*" onChange={handleNoteFileChange} />
+                                     
                                      <button 
                                          onClick={() => setShowExtensionInput(!showExtensionInput)}
                                          className={`px-3 py-1 text-xs rounded border flex items-center gap-1 transition ${showExtensionInput ? 'bg-purple-500 text-white border-purple-500' : 'bg-purple-500/20 text-purple-200 border-purple-500/30 hover:bg-purple-500/30'}`}

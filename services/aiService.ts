@@ -253,6 +253,58 @@ export const extendLessonNote = async (currentNote: string, subject: string, cla
     }
 };
 
+export const processDocumentToNote = async (file: { mimeType: string, data: string }, subject: string, classLevel: ClassLevel): Promise<string> => {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) throw new Error("No API Key");
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const formattingInstructions = `
+    HEURISTIC PARSING & FORMATTING RULES:
+    1. Analyze the subject matter:
+       - If QUANTITATIVE (Physics, Math, Chemistry, Accounting):
+         * STRICTLY use LaTeX for ALL formulas, equations, and variables.
+         * Inline math: $E=mc^2$
+         * Block math: $$x = \\frac{-b}{2a}$$
+       - If QUALITATIVE (History, Literature, Intro Biology):
+         * Do NOT use LaTeX for standard text.
+         * Use standard Markdown for emphasis (**bold**, *italic*).
+    2. Headings:
+       - Standardize section titles using #### (e.g. #### Introduction).
+    `;
+
+    const prompt = `
+        Role: Educational Content Converter.
+        Context: ${classLevel} ${subject}.
+        Task: Convert the attached document into a structured, clean Markdown lesson note.
+        
+        Instructions:
+        1. Extract the educational content.
+        2. Format it using the following rules:
+           ${formattingInstructions}
+        3. Do NOT include preamble or conversational filler. Output ONLY the markdown note.
+    `;
+
+    const parts = [
+        { text: prompt },
+        { inlineData: { mimeType: file.mimeType, data: file.data } }
+    ];
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: { parts },
+            config: {
+                temperature: 0.5,
+            }
+        });
+        return response.text || "Failed to convert document.";
+    } catch (e) {
+        console.error("Document conversion failed", e);
+        return "Error: Could not process document.";
+    }
+};
+
 export const generateSpecificLevel = async (
     activityType: ActivityType | 'boss_level' | 'question_bank',
     lessonNote: string,
