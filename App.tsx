@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { Zap, LogOut } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Zap, LogOut, Loader2 } from 'lucide-react';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { StudentDashboard } from './components/StudentDashboard';
 import { LoginPage } from './components/LoginPage';
 import { SAMPLE_MODULES } from './constants';
 import { GameModule, UserRole, ViewState, StudentProgress, Student, Session } from './types';
 import { sessionManager } from './services/sessionManager';
+import { useAuth } from './hooks/useAuth';
 
 // Mock initial students
 const INITIAL_STUDENTS: Student[] = [
@@ -15,21 +16,42 @@ const INITIAL_STUDENTS: Student[] = [
 ];
 
 export default function App() {
+  const { teacher, loading: authLoading, login: teacherLogin, signup: teacherSignup, logout: teacherLogout, isAuthenticated: isTeacherAuth } = useAuth();
+  
+  // Overall App Auth State (Teacher OR Student)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [userRole, setUserRole] = useState<UserRole>('teacher');
+  
+  const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [modules, setModules] = useState<GameModule[]>(SAMPLE_MODULES);
   const [currentModule, setCurrentModule] = useState<GameModule | null>(null);
   const [studentProgress, setStudentProgress] = useState<StudentProgress>({});
   const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS);
   
-  // Session State (synced with SessionManager)
-  // In a real app with Firebase, this would be a realtime listener
+  // Session State
   const [activeSession, setActiveSession] = useState<Session | undefined>(undefined);
 
+  // Sync Teacher Auth from Hook to App State
+  useEffect(() => {
+      if (!authLoading && isTeacherAuth && teacher) {
+          setIsAuthenticated(true);
+          setUserRole('teacher');
+          // Check for existing session
+          const existingSession = sessionManager.getActiveSessionForTeacher(teacher.id);
+          if (existingSession) {
+              setActiveSession(existingSession);
+          }
+      } else if (!authLoading && !isTeacherAuth && userRole === 'teacher') {
+          // If teacher logged out
+          setIsAuthenticated(false);
+      }
+  }, [isTeacherAuth, authLoading, teacher]);
+
   const handleCreateSession = () => {
-      const newSession = sessionManager.createSession('teacher-1');
-      setActiveSession({...newSession}); // Spread to force react re-render
+      if (teacher) {
+        const newSession = sessionManager.createSession(teacher.id);
+        setActiveSession({...newSession});
+      }
   };
 
   const handleEndSession = (sessionId: string) => {
@@ -37,16 +59,21 @@ export default function App() {
       setActiveSession(undefined);
   };
 
-  const handleLogin = (role: UserRole, data?: { name?: string, code?: string }): boolean => {
+  const handleLogin = async (role: UserRole, data?: any): Promise<boolean> => {
       if (role === 'teacher') {
-          setUserRole('teacher');
-          setIsAuthenticated(true);
-          // Check if this teacher already has an active session from the manager
-          const existingSession = sessionManager.getActiveSessionForTeacher('teacher-1');
-          if (existingSession) {
-              setActiveSession(existingSession);
+          const { type, email, password, name, school } = data;
+          try {
+              if (type === 'signup') {
+                  await teacherSignup(name, email, school, password);
+              } else {
+                  await teacherLogin(email, password);
+              }
+              // useAuth hook will trigger the useEffect to set IsAuthenticated
+              return true;
+          } catch (e) {
+              console.error(e);
+              throw e; // Propagate to LoginPage for error display
           }
-          return true;
       }
       
       if (role === 'student') {
@@ -67,15 +94,12 @@ export default function App() {
                   setStudents(prev => [...prev, { id: Date.now(), name, plays: 0, avgScore: 0, streak: 0 }]);
               }
               
-              // 4. Update Teacher View (Mock Realtime Update)
-              // Since App.tsx holds the state for both views in this demo, 
-              // we refresh the activeSession state to show the new student on the teacher's dashboard
+              // 4. Update Teacher View (Mock Realtime Update simulation)
               const currentSession = sessionManager.getSession(code);
               if (currentSession) {
                   setActiveSession({...currentSession});
               }
 
-              console.log(`Student ${name} joined session ${code}`);
               return true;
           } else {
               return false; // Invalid or Inactive Code
@@ -85,8 +109,10 @@ export default function App() {
   };
 
   const handleLogout = () => {
+      if (userRole === 'teacher') {
+          teacherLogout();
+      }
       setIsAuthenticated(false);
-      setUserRole('teacher'); 
       setActiveView('dashboard');
       setCurrentModule(null);
   };
@@ -105,7 +131,7 @@ export default function App() {
         return m;
     }));
 
-    // 2. Update Student Stats
+    // 2. Update Student Stats (simplified for now)
     setStudents(prev => prev.map(s => {
         if (s.id === 1) { 
              const newPlays = s.plays + 1;
@@ -117,8 +143,22 @@ export default function App() {
     }));
   };
 
+  if (authLoading) {
+      return (
+          <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="relative">
+                      <div className="w-16 h-16 rounded-full border-4 border-white/20 border-t-yellow-400 animate-spin"></div>
+                      <Zap className="w-6 h-6 text-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 fill-white animate-pulse" />
+                  </div>
+                  <p className="text-white font-bold tracking-widest text-sm uppercase">Initializing Nexus...</p>
+              </div>
+          </div>
+      );
+  }
+
   if (!isAuthenticated) {
-      return <LoginPage onLogin={handleLogin} />;
+      return <LoginPage onLogin={handleLogin} isLoading={authLoading} />;
   }
 
   return (
@@ -139,7 +179,7 @@ export default function App() {
             
             <div className="flex items-center gap-4">
                 <span className="text-white/50 text-sm font-medium hidden md:inline-block">
-                    Logged in as <span className="text-white capitalize">{userRole}</span>
+                    Logged in as <span className="text-white capitalize font-bold">{userRole === 'teacher' && teacher ? teacher.name : userRole}</span>
                 </span>
                 <button
                   onClick={handleLogout}
@@ -167,6 +207,7 @@ export default function App() {
             activeSession={activeSession}
             onCreateSession={handleCreateSession}
             onEndSession={handleEndSession}
+            teacherName={teacher?.name}
           />
         ) : (
           <StudentDashboard 

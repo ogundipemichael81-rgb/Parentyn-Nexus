@@ -7,6 +7,14 @@ export type ModuleCategory = 'qualitative' | 'quantitative';
 export type ModuleStatus = 'draft' | 'published';
 export type NoteLength = 'concise' | 'standard' | 'extensive';
 
+export interface TeacherProfile {
+  id: string;
+  name: string;
+  email: string;
+  school: string;
+  role: 'teacher';
+}
+
 export interface GameTemplate {
   id: string;
   name: string;
