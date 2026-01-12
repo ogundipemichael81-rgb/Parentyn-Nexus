@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera } from 'lucide-react';
-import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level } from '../types';
+import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy } from 'lucide-react';
+import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level, Session } from '../types';
 import { GAME_TEMPLATES } from '../constants';
 import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote } from '../services/aiService';
 import { NavButton, StatCard, Step, RichTextRenderer } from './Shared';
@@ -14,10 +14,13 @@ interface TeacherDashboardProps {
   currentModule: GameModule | null;
   setCurrentModule: (m: GameModule | null) => void;
   students: Student[];
+  activeSession?: Session;
+  onCreateSession?: () => void;
+  onEndSession?: (code: string) => void;
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ 
-  activeView, setActiveView, modules, setModules, currentModule, setCurrentModule, students
+  activeView, setActiveView, modules, setModules, currentModule, setCurrentModule, students, activeSession, onCreateSession, onEndSession
 }) => {
   const [generatedModule, setGeneratedModule] = useState<GameModule | null>(null);
   const [editingModule, setEditingModule] = useState<GameModule | null>(null);
@@ -81,7 +84,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       </div>
 
       <div className="md:col-span-9">
-        {activeView === 'dashboard' && <DashboardView modules={modules} />}
+        {activeView === 'dashboard' && (
+            <DashboardView 
+                modules={modules} 
+                activeSession={activeSession} 
+                onCreateSession={onCreateSession} 
+                onEndSession={onEndSession} 
+            />
+        )}
         {activeView === 'studio' && (
           <StudioView 
             setGeneratedModule={setGeneratedModule}
@@ -107,12 +117,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
 // --- Sub Components for Teacher Views ---
 
-const DashboardView: React.FC<{ modules: GameModule[] }> = ({ modules }) => {
+const DashboardView: React.FC<{ 
+    modules: GameModule[];
+    activeSession?: Session;
+    onCreateSession?: () => void;
+    onEndSession?: (code: string) => void;
+}> = ({ modules, activeSession, onCreateSession, onEndSession }) => {
   const publishedModules = modules.filter(m => m.status === 'published' || !m.status);
   const totalPlays = publishedModules.reduce((sum, m) => sum + (m.plays || 0), 0);
   const avgScore = publishedModules.length > 0 
     ? Math.round(publishedModules.reduce((sum, m) => sum + (m.avgScore || 0), 0) / publishedModules.length)
     : 0;
+  
+  const [copied, setCopied] = useState(false);
+  const copyCode = () => {
+      if (activeSession) {
+          navigator.clipboard.writeText(activeSession.session_id);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+      }
+  };
 
   return (
     <div className="space-y-6">
@@ -124,6 +148,66 @@ const DashboardView: React.FC<{ modules: GameModule[] }> = ({ modules }) => {
         <div className="flex gap-2">
             <button className="bg-white/10 hover:bg-white/20 text-white text-sm px-4 py-2 rounded-lg border border-white/10">Export Report</button>
         </div>
+      </div>
+
+      {/* Session Control Panel */}
+      <div className="bg-gradient-to-r from-indigo-900 to-purple-900 rounded-2xl p-6 border border-white/20 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+          
+          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="text-center md:text-left">
+                  <h3 className="text-xl font-bold text-white flex items-center justify-center md:justify-start gap-2">
+                      <Zap className="w-5 h-5 text-yellow-400 fill-yellow-400" /> Classroom Connectivity
+                  </h3>
+                  <p className="text-purple-200 text-sm mt-1">Manage live sessions and student access.</p>
+              </div>
+
+              {activeSession && activeSession.active_status ? (
+                  <div className="flex flex-col items-center animate-in zoom-in duration-300">
+                      <p className="text-xs text-green-300 font-bold uppercase tracking-widest mb-2 flex items-center gap-1">
+                          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Session Active
+                      </p>
+                      <div className="flex items-center gap-4 bg-black/30 p-4 rounded-xl border border-white/10 backdrop-blur-md">
+                          <div className="text-center">
+                              <p className="text-xs text-white/50 uppercase">Class Code</p>
+                              <p className="text-4xl font-mono font-bold text-white tracking-widest">{activeSession.session_id}</p>
+                          </div>
+                          <div className="h-10 w-px bg-white/10"></div>
+                          <button 
+                              onClick={copyCode}
+                              className="p-3 bg-white/5 hover:bg-white/10 rounded-lg text-white transition border border-white/5"
+                              title="Copy Code"
+                          >
+                             {copied ? <Check className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5" />}
+                          </button>
+                      </div>
+                      <div className="flex items-center gap-4 mt-3">
+                           <p className="text-sm text-white/60">
+                               <Users className="w-4 h-4 inline mr-1" /> {activeSession.students.length} Joined
+                           </p>
+                           <button 
+                                onClick={() => onEndSession && onEndSession(activeSession.session_id)}
+                                className="text-xs text-red-300 hover:text-red-200 flex items-center gap-1 bg-red-500/10 px-3 py-1.5 rounded-full border border-red-500/20 transition hover:bg-red-500/20"
+                           >
+                               <Power className="w-3 h-3" /> End Session
+                           </button>
+                      </div>
+                  </div>
+              ) : (
+                  <button 
+                      onClick={onCreateSession}
+                      className="px-6 py-4 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-3 group"
+                  >
+                      <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center group-hover:bg-purple-200 transition">
+                          <Play className="w-5 h-5 text-purple-700 fill-purple-700 ml-1" />
+                      </div>
+                      <div className="text-left">
+                          <span className="block text-sm opacity-70">Ready to teach?</span>
+                          <span className="block text-lg">Start New Session</span>
+                      </div>
+                  </button>
+              )}
+          </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -163,7 +247,7 @@ const DashboardView: React.FC<{ modules: GameModule[] }> = ({ modules }) => {
     </div>
   );
 };
-
+/* LevelEditor, ModulesView, StudentsView components remain the same as previous file but are implicitly included here */
 interface StudioViewProps {
   setGeneratedModule: (m: GameModule | null) => void;
   generatedModule: GameModule | null;
@@ -547,7 +631,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                 </div>
             </div>
          )}
-
+         {/* ... (Steps 2-4 and LevelEditor logic remains same as provided in previous full file context, ensuring continuity) */}
          {/* Step 2: Configuration */}
          {step === 2 && (
              <div className="w-full p-8 animate-in fade-in slide-in-from-right-4">
@@ -1058,7 +1142,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
     </div>
   );
 };
-
+/* LevelEditor, ModulesView, StudentsView remain same */
 const ModulesView: React.FC<{
   modules: GameModule[];
   setCurrentModule: (m: GameModule | null) => void; 

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Zap } from 'lucide-react';
+import { Zap, LogOut } from 'lucide-react';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { StudentDashboard } from './components/StudentDashboard';
+import { LoginPage } from './components/LoginPage';
 import { SAMPLE_MODULES } from './constants';
-import { GameModule, UserRole, ViewState, StudentProgress, Student } from './types';
+import { GameModule, UserRole, ViewState, StudentProgress, Student, Session } from './types';
+import { sessionManager } from './services/sessionManager';
 
 // Mock initial students
 const INITIAL_STUDENTS: Student[] = [
@@ -13,14 +15,82 @@ const INITIAL_STUDENTS: Student[] = [
 ];
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [userRole, setUserRole] = useState<UserRole>('teacher');
   const [modules, setModules] = useState<GameModule[]>(SAMPLE_MODULES);
   const [currentModule, setCurrentModule] = useState<GameModule | null>(null);
   const [studentProgress, setStudentProgress] = useState<StudentProgress>({});
   const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS);
+  
+  // Session State (synced with SessionManager)
+  // In a real app with Firebase, this would be a realtime listener
+  const [activeSession, setActiveSession] = useState<Session | undefined>(undefined);
 
-  // Simulate real-time updates when a student finishes a game
+  const handleCreateSession = () => {
+      const newSession = sessionManager.createSession('teacher-1');
+      setActiveSession({...newSession}); // Spread to force react re-render
+  };
+
+  const handleEndSession = (sessionId: string) => {
+      sessionManager.endSession(sessionId);
+      setActiveSession(undefined);
+  };
+
+  const handleLogin = (role: UserRole, data?: { name?: string, code?: string }): boolean => {
+      if (role === 'teacher') {
+          setUserRole('teacher');
+          setIsAuthenticated(true);
+          // Check if this teacher already has an active session from the manager
+          const existingSession = sessionManager.getActiveSessionForTeacher('teacher-1');
+          if (existingSession) {
+              setActiveSession(existingSession);
+          }
+          return true;
+      }
+      
+      if (role === 'student') {
+          const { name, code } = data || {};
+          if (!name || !code) return false;
+
+          // 1. Validate Session via Manager
+          if (sessionManager.isSessionValid(code)) {
+              setUserRole('student');
+              setIsAuthenticated(true);
+              
+              // 2. Join Session via Manager
+              sessionManager.joinSession(code, name);
+              
+              // 3. Update local student registry (Mock logic)
+              const existingStudent = students.find(s => s.name.toLowerCase() === name.toLowerCase());
+              if (!existingStudent) {
+                  setStudents(prev => [...prev, { id: Date.now(), name, plays: 0, avgScore: 0, streak: 0 }]);
+              }
+              
+              // 4. Update Teacher View (Mock Realtime Update)
+              // Since App.tsx holds the state for both views in this demo, 
+              // we refresh the activeSession state to show the new student on the teacher's dashboard
+              const currentSession = sessionManager.getSession(code);
+              if (currentSession) {
+                  setActiveSession({...currentSession});
+              }
+
+              console.log(`Student ${name} joined session ${code}`);
+              return true;
+          } else {
+              return false; // Invalid or Inactive Code
+          }
+      }
+      return false;
+  };
+
+  const handleLogout = () => {
+      setIsAuthenticated(false);
+      setUserRole('teacher'); 
+      setActiveView('dashboard');
+      setCurrentModule(null);
+  };
+
   const handleGameComplete = (moduleId: string, score: number, totalPoints: number) => {
     const percentage = totalPoints > 0 ? Math.round((score / totalPoints) * 100) : 0;
 
@@ -28,7 +98,6 @@ export default function App() {
     setModules(prev => prev.map(m => {
         if (m.id === moduleId) {
             const newPlays = (m.plays || 0) + 1;
-            // Weighted average calculation
             const currentTotalScore = (m.avgScore || 0) * (m.plays || 0);
             const newAvg = Math.round((currentTotalScore + percentage) / newPlays);
             return { ...m, plays: newPlays, avgScore: newAvg };
@@ -36,9 +105,9 @@ export default function App() {
         return m;
     }));
 
-    // 2. Update Student Stats (Simulating the active user is 'Chioma Okafor' - ID 1)
+    // 2. Update Student Stats
     setStudents(prev => prev.map(s => {
-        if (s.id === 1) {
+        if (s.id === 1) { 
              const newPlays = s.plays + 1;
              const currentTotal = s.avgScore * s.plays;
              const newAvg = Math.round((currentTotal + percentage) / newPlays);
@@ -47,6 +116,10 @@ export default function App() {
         return s;
     }));
   };
+
+  if (!isAuthenticated) {
+      return <LoginPage onLogin={handleLogin} />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 font-sans selection:bg-purple-500 selection:text-white">
@@ -64,27 +137,17 @@ export default function App() {
               </div>
             </div>
             
-            <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/10">
-              <button
-                onClick={() => setUserRole('teacher')}
-                className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${
-                  userRole === 'teacher' 
-                    ? 'bg-white text-purple-900 shadow-md' 
-                    : 'text-white hover:bg-white/10'
-                }`}
-              >
-                Teacher View
-              </button>
-              <button
-                onClick={() => setUserRole('student')}
-                className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${
-                  userRole === 'student' 
-                    ? 'bg-white text-purple-900 shadow-md' 
-                    : 'text-white hover:bg-white/10'
-                }`}
-              >
-                Student View
-              </button>
+            <div className="flex items-center gap-4">
+                <span className="text-white/50 text-sm font-medium hidden md:inline-block">
+                    Logged in as <span className="text-white capitalize">{userRole}</span>
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 bg-red-500/10 hover:bg-red-500/20 text-red-200 border border-red-500/20 flex items-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
             </div>
           </div>
         </div>
@@ -101,6 +164,9 @@ export default function App() {
             currentModule={currentModule}
             setCurrentModule={setCurrentModule}
             students={students}
+            activeSession={activeSession}
+            onCreateSession={handleCreateSession}
+            onEndSession={handleEndSession}
           />
         ) : (
           <StudentDashboard 

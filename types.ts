@@ -103,3 +103,11 @@ export interface StudentProgress {
     completed: boolean;
   };
 }
+
+export interface Session {
+  session_id: string;      // The 6-digit code
+  teacher_id: string;      // UID of creator
+  created_at: string;      // Timestamp
+  active_status: boolean;  // Boolean status
+  students: string[];      // List of joined student names (kept for UI display)
+}
