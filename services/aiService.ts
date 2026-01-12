@@ -58,6 +58,23 @@ export const generateGameContent = async (
 
     const contextDesc = customContext || template.theme;
     
+    // Strict Latex Instructions based on category
+    const mathInstructions = category === 'quantitative' 
+        ? `
+        CRITICAL MATHEMATICAL FORMATTING RULES:
+        1. You are a strict Mathematician.
+        2. Write ALL formulas, variables, and numbers using standard LaTeX syntax.
+        3. ALWAYS wrap inline math in single dollar signs (e.g., $E=mc^2$).
+        4. ALWAYS wrap block math in double dollar signs (e.g., $$x = \\frac{-b}{2a}$$).
+        5. NEVER write raw LaTeX commands (like \\frac, \\bar, \\hat) without the surrounding dollar signs.
+        6. NO REDUNDANCY: Do NOT write the text pronunciation next to the symbol. 
+           - INCORRECT: $\\bar{x}$ (x-bar)
+           - INCORRECT: $\\pi$ (pi)
+           - CORRECT: $\\bar{x}$
+           - CORRECT: $\\pi$
+        ` 
+        : 'Use clear headings and bullet points.';
+
     const prompt = `
     Role: Curriculum Expert & Game Designer.
     Task: Create a learning module for ${classLevel} students in ${subject}.
@@ -72,7 +89,7 @@ export const generateGameContent = async (
     Generate a JSON object containing:
     1. "title": An engaging title for the module.
     2. "lessonNote": A structured markdown lesson note. 
-       - ${category === 'quantitative' ? 'CRITICAL: Use LaTeX for ALL formulas and math expressions. Wrap inline math in single dollar signs ($...$) and block math in double dollar signs ($$...$$). Do NOT use \\( ... \\) or \\[ ... \\].' : 'Use clear headings and bullet points.'}
+       ${mathInstructions}
     3. "metadata": { "difficulty": "easy"|"medium"|"hard", "estimatedTime": number (minutes) }
     4. "levels": An array of exactly 3 levels in this order:
        - Level 1: "flashcards" (Concept Deck). Array of {front, back}.
@@ -95,7 +112,7 @@ export const generateGameContent = async (
             contents: { parts },
             config: {
                 responseMimeType: "application/json",
-                temperature: 1.0, // High temperature for creativity
+                temperature: 1.0, // High temperature for creative/varied generation
             }
         });
 
@@ -210,7 +227,10 @@ export const extendLessonNote = async (currentNote: string, subject: string, cla
         - Output ONLY the new additional content.
         - Do NOT repeat the existing note content provided below.
         - Start with a clear Markdown Header (### Title of Extension).
-        - Use proper LaTeX formatting for math ($...$ for inline, $$...$$ for block).
+        - STRICT LATEX RULES: 
+          1. Wrap all formulas in $...$ (inline) or $$...$$ (block).
+          2. Do not leave raw LaTeX (like \\frac) unwrapped.
+          3. Do not add redundant text explanations like '$\\alpha$ (alpha)'. Just write '$\\alpha$'.
         - Maintain the same markdown formatting style.
         - Provide high-quality, rigorous academic content.
         
@@ -250,7 +270,10 @@ export const generateSpecificLevel = async (
         Base your content STRICTLY on this Lesson Note:
         "${lessonNote.substring(0, 5000)}..."
         
-        CRITICAL: Ensure any math or physics formulas use correct LaTeX format ($...$).
+        CRITICAL LATEX RULES:
+        1. Ensure any math or physics formulas use correct LaTeX format ($...$).
+        2. NEVER write 'x-bar' or 'alpha' as text next to the symbol. Just use the symbol $\\bar{x}$.
+        3. Do not write raw LaTeX commands without dollar signs.
     `;
 
     let schema: Schema = { type: Type.OBJECT, properties: {}, required: [] };

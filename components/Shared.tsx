@@ -79,65 +79,80 @@ export const Step: React.FC<StepProps> = ({ num, label, active, completed }) => 
 // --- Rich Text & LaTeX Renderer ---
 
 export const RichTextRenderer: React.FC<{ content: string, className?: string }> = ({ content, className = "" }) => {
-  // 1. Process Markdown-like syntax
+  
+  // 1. Core Tokenizer: Split by Block Math ($$...$$) first to preserve multi-line formulas
+  const tokenizeBlocks = (text: string) => {
+      // Regex for block math $$ ... $$
+      const blockRegex = /(\$\$[\s\S]+?\$\$)/g;
+      const parts = text.split(blockRegex);
+      
+      return parts.map((part, index) => {
+          if (part.startsWith('$$') && part.endsWith('$$')) {
+              return <LatexSpan key={`latex-block-${index}`} latex={part.slice(2, -2)} display={true} />;
+          } else {
+              return <React.Fragment key={`md-block-${index}`}>{processMarkdown(part)}</React.Fragment>;
+          }
+      });
+  };
+
+  // 2. Process Markdown syntax on text chunks
   const processMarkdown = (text: string) => {
     const lines = text.split('\n');
     const elements: React.ReactNode[] = [];
     
     let listItems: React.ReactNode[] = [];
     
+    const flushList = (keyPrefix: string) => {
+        if (listItems.length > 0) { 
+            elements.push(<ul key={`${keyPrefix}-ul`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); 
+            listItems = []; 
+        }
+    };
+
     lines.forEach((line, index) => {
       // Headers
       if (line.startsWith('### ')) {
-        if (listItems.length > 0) { elements.push(<ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); listItems = []; }
-        elements.push(<h3 key={index} className="text-lg font-bold text-yellow-400 mt-6 mb-2">{renderContentWithLatex(line.replace('### ', ''))}</h3>);
+        flushList(`h3-${index}`);
+        elements.push(<h3 key={`h3-${index}`} className="text-lg font-bold text-yellow-400 mt-6 mb-2">{renderInlineMath(line.replace('### ', ''))}</h3>);
       } 
       else if (line.startsWith('## ')) {
-        if (listItems.length > 0) { elements.push(<ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); listItems = []; }
-        elements.push(<h4 key={index} className="text-md font-bold text-blue-300 mt-4 mb-2">{renderContentWithLatex(line.replace('## ', ''))}</h4>);
+        flushList(`h4-${index}`);
+        elements.push(<h4 key={`h4-${index}`} className="text-md font-bold text-blue-300 mt-4 mb-2">{renderInlineMath(line.replace('## ', ''))}</h4>);
       }
       // Lists
       else if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
         const content = line.trim().substring(2);
-        listItems.push(<li key={`li-${index}`} className="text-white/90 leading-relaxed pl-1">{renderContentWithLatex(content)}</li>);
+        listItems.push(<li key={`li-${index}`} className="text-white/90 leading-relaxed pl-1">{renderInlineMath(content)}</li>);
       }
       // Standard Paragraphs
       else if (line.trim().length > 0) {
-        if (listItems.length > 0) { elements.push(<ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); listItems = []; }
-        elements.push(<p key={index} className="mb-3 text-white/90 leading-relaxed">{renderContentWithLatex(line)}</p>);
+        flushList(`p-${index}`);
+        elements.push(<p key={`p-${index}`} className="mb-3 text-white/90 leading-relaxed">{renderInlineMath(line)}</p>);
       }
     });
     
-    if (listItems.length > 0) { elements.push(<ul key={`ul-end`} className="list-disc pl-5 mb-4 space-y-1">{listItems}</ul>); }
+    flushList('end');
 
     return elements;
   };
 
-  // 2. Tokenize logic to separate raw text from LaTeX math blocks
-  const renderContentWithLatex = (text: string): React.ReactNode => {
-    // Regex matches $$...$$ OR $...$
-    // Using a capture group to include the delimiter in the split results for easier processing
-    const regex = /(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$)/g;
-    const parts = text.split(regex);
+  // 3. Render Inline Math ($...$) and Formatting (**bold**)
+  const renderInlineMath = (text: string): React.ReactNode => {
+    // Regex matches inline math $...$
+    const inlineRegex = /(\$[^\n$]+?\$)/g;
+    const parts = text.split(inlineRegex);
 
     return parts.map((part, i) => {
-      if (part.startsWith('$$') && part.endsWith('$$')) {
-        // Block math
-        return <LatexSpan key={i} latex={part.slice(2, -2)} display={true} />;
-      } 
-      else if (part.startsWith('$') && part.endsWith('$')) {
-        // Inline math
+      if (part.startsWith('$') && part.endsWith('$')) {
         return <LatexSpan key={i} latex={part.slice(1, -1)} display={false} />;
       } 
       else {
-        // Text segment: Process markdown styles (bold)
         return <span key={i}>{processBold(part)}</span>;
       }
     });
   };
 
   const processBold = (text: string): React.ReactNode => {
-    // Split by bold syntax **text**
     const parts = text.split(/(\*\*.*?\*\*)/g);
     return parts.map((part, i) => {
       if (part.startsWith('**') && part.endsWith('**')) {
@@ -147,7 +162,7 @@ export const RichTextRenderer: React.FC<{ content: string, className?: string }>
     });
   };
 
-  return <div className={`rich-text ${className}`}>{processMarkdown(content || "")}</div>;
+  return <div className={`rich-text ${className}`}>{tokenizeBlocks(content || "")}</div>;
 };
 
 // Isolated component for KaTeX to ensure precision and prevent re-render duplication issues
@@ -156,15 +171,16 @@ const LatexSpan: React.FC<{ latex: string, display: boolean }> = ({ latex, displ
     
     useEffect(() => {
         if (spanRef.current) {
+            spanRef.current.innerHTML = ''; // Clear to prevent duplication
             try {
                 katex.render(latex, spanRef.current, {
                     throwOnError: false,
                     displayMode: display,
-                    output: 'mathml', // Better for accessibility and performance usually
+                    output: 'html', // Changed to HTML for better browser support and visibility
                 });
             } catch (e) {
                 console.error("KaTeX Error:", e);
-                spanRef.current.innerText = latex; // Fallback to raw tex
+                spanRef.current.innerText = latex; // Fallback
             }
         }
     }, [latex, display]);

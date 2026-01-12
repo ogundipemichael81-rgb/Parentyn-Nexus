@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy } from 'lucide-react';
+import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown } from 'lucide-react';
 import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level, Session } from '../types';
 import { GAME_TEMPLATES } from '../constants';
 import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote } from '../services/aiService';
@@ -606,6 +606,19 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
       } finally {
           setIsProcessingAction(false);
       }
+  };
+
+  const moveLevel = (index: number, direction: 'up' | 'down') => {
+      if (!generatedModule) return;
+      const levels = [...generatedModule.levels];
+      if (direction === 'up') {
+          if (index === 0) return;
+          [levels[index - 1], levels[index]] = [levels[index], levels[index - 1]];
+      } else {
+          if (index === levels.length - 1) return;
+          [levels[index], levels[index + 1]] = [levels[index + 1], levels[index]];
+      }
+      setGeneratedModule({ ...generatedModule, levels });
   };
 
   const handleUpdateLevel = (updatedLevel: Level) => {
@@ -1248,7 +1261,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                                  const isSelected = selectedLevelIds.has(level.id);
                                  return (
                                      <div 
-                                        key={i} 
+                                        key={level.id} 
                                         onClick={() => toggleLevelSelection(level.id)}
                                         className={`rounded-xl p-4 border transition group relative overflow-hidden cursor-pointer ${
                                             isSelected 
@@ -1264,16 +1277,35 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                                          </div>
 
                                          <div className="absolute top-2 right-2 flex gap-2 z-10">
+                                             <div className="flex flex-col gap-1 mr-2 bg-black/20 rounded p-0.5">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); moveLevel(i, 'up'); }}
+                                                    disabled={i === 0}
+                                                    className="p-1 hover:bg-white/20 text-white rounded disabled:opacity-20 transition"
+                                                    title="Move Up"
+                                                >
+                                                    <ArrowUp className="w-3 h-3" />
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); moveLevel(i, 'down'); }}
+                                                    disabled={i === generatedModule.levels.length - 1}
+                                                    className="p-1 hover:bg-white/20 text-white rounded disabled:opacity-20 transition"
+                                                    title="Move Down"
+                                                >
+                                                    <ArrowDown className="w-3 h-3" />
+                                                </button>
+                                             </div>
+
                                              <button 
                                                 onClick={(e) => { e.stopPropagation(); setPreviewLevel(level); }}
-                                                className="p-1.5 bg-yellow-500/10 hover:bg-yellow-500/30 text-yellow-400 rounded-lg transition"
+                                                className="p-1.5 bg-yellow-500/10 hover:bg-yellow-500/30 text-yellow-400 rounded-lg transition h-fit"
                                                 title="Preview Level"
                                              >
                                                  <Eye className="w-3 h-3" />
                                              </button>
                                              <button 
                                                 onClick={(e) => { e.stopPropagation(); removeLevel(i); }}
-                                                className="p-1.5 bg-red-500/10 hover:bg-red-500/30 text-red-400 rounded-lg transition"
+                                                className="p-1.5 bg-red-500/10 hover:bg-red-500/30 text-red-400 rounded-lg transition h-fit"
                                                 title="Remove Level"
                                              >
                                                  <Trash2 className="w-3 h-3" />
@@ -1282,7 +1314,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                                          <div className="absolute top-0 right-10 p-2 opacity-10 group-hover:opacity-20 transition pointer-events-none">
                                              {getLevelIcon(level.type)}
                                          </div>
-                                         <div className="flex items-center justify-between mb-2 mr-16 pl-8">
+                                         <div className="flex items-center justify-between mb-2 mr-24 pl-8">
                                              <div className="flex items-center gap-2">
                                                  <div className="p-2 bg-black/20 rounded-lg text-purple-300">
                                                      {getLevelIcon(level.type)}
