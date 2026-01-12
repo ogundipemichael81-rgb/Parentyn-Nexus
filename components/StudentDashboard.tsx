@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { Play, RotateCw, CheckCircle2, ArrowLeft, XCircle, Check, X, BookOpen, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, RotateCw, CheckCircle2, ArrowLeft, XCircle, Check, X, BookOpen, ChevronRight, Image as ImageIcon, Zap } from 'lucide-react';
 import { GameModule, StudentProgress, Level } from '../types';
 import { GameplayView } from './GameplayView';
 import { RichTextRenderer } from './Shared';
+import { useSessionSync } from '../hooks/useSessionSync';
+import { sessionManager } from '../services/sessionManager';
 
 interface StudentDashboardProps {
   modules: GameModule[];
@@ -11,6 +13,7 @@ interface StudentDashboardProps {
   progress: StudentProgress;
   setProgress: (p: StudentProgress) => void;
   onGameComplete?: (moduleId: string, score: number, totalPoints: number) => void;
+  activeSessionId?: string;
 }
 
 interface LevelResult {
@@ -20,18 +23,69 @@ interface LevelResult {
     type: string;
 }
 
-export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, currentModule, setCurrentModule, progress, setProgress, onGameComplete }) => {
+export const StudentDashboard: React.FC<StudentDashboardProps> = ({ 
+  modules, currentModule, setCurrentModule, progress, setProgress, onGameComplete, activeSessionId 
+}) => {
   const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
-  const [viewState, setViewState] = useState<'study' | 'play' | 'result'>('study');
+  const [viewState, setViewState] = useState<'study' | 'play' | 'result' | 'waiting'>('study');
   const [score, setScore] = useState(0);
   const [results, setResults] = useState<LevelResult[]>([]);
+
+  // Real-time synchronization hooks
+  // If activeSessionId is present (student joined via code), we listen to that session
+  // Otherwise we default to self-paced learning (undefined session)
+  // Note: activeSessionId comes from where the Student JOINED the code in App.tsx. 
+  // However, App.tsx passes `currentModule` but not `activeSessionId`. We need to fetch the session from where the user joined.
+  
+  // Actually, we can check if the student is currently IN a session via SessionManager or Props. 
+  // For now, let's assume if there's an active session in local storage for this browser, we use it.
+  const [liveSessionCode, setLiveSessionCode] = useState<string | null>(null);
+  const liveSession = useSessionSync(liveSessionCode || undefined);
+
+  // Check on mount if we are in a session (simple check for this demo)
+  useEffect(() => {
+     // This logic would ideally come from a global context or App.tsx props
+     // For this implementation, we will check if App.tsx passed it, or infer it from local storage if available
+     // But App.tsx doesn't pass it yet. We'll rely on the parent component passing it if possible, 
+     // or we can hack it by finding the first active session we joined.
+     // *Self-correction*: For this specific request, `App.tsx` handles the join. 
+     // We will need to update App.tsx to pass the `activeSession` to `StudentDashboard`.
+     // IF props.activeSessionId is passed, use it.
+     if (activeSessionId) {
+         setLiveSessionCode(activeSessionId);
+     }
+  }, [activeSessionId]);
+
+  // EFFECT: React to Teacher's Remote Control
+  useEffect(() => {
+      if (liveSession && liveSession.active_status) {
+          // If teacher selected a module
+          if (liveSession.current_module_id) {
+              const remoteModule = modules.find(m => m.id === liveSession.current_module_id);
+              if (remoteModule && remoteModule.id !== currentModule?.id) {
+                  setCurrentModule(remoteModule);
+                  setResults([]);
+                  setScore(0);
+              }
+
+              // Sync State Machine
+              if (liveSession.sync_state === 'lesson_note') {
+                  setViewState('study');
+              } else if (liveSession.sync_state === 'playing') {
+                  setViewState('play');
+                  if (liveSession.current_level_index !== undefined) {
+                      setCurrentLevelIndex(liveSession.current_level_index);
+                  }
+              }
+          }
+      }
+  }, [liveSession, modules, currentModule]);
 
   const startGame = (module: GameModule) => {
     setCurrentModule(module);
     setCurrentLevelIndex(0);
     setScore(0);
     setResults([]);
-    // If module has notes, start in study mode, otherwise go straight to play
     setViewState(module.lessonNote ? 'study' : 'play');
   };
 
@@ -41,13 +95,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, cur
       const levelPoints = correct ? (currentLevel?.points || 0) : 0;
       
       const newScore = score + levelPoints;
+      if (correct) setScore(newScore);
 
-      // Optimistically update score state
-      if (correct) {
-        setScore(newScore);
-      }
-
-      // Record result
       const newResults = [...results, {
           title: currentLevel.title,
           correct: correct,
@@ -56,20 +105,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, cur
       }];
       setResults(newResults);
 
-      if (currentLevelIndex < currentModule.levels.length - 1) {
-        // Small delay for transition effect could be added here
-        setCurrentLevelIndex(prev => prev + 1);
+      // In Live Session, we DO NOT auto-advance if the teacher controls it
+      if (liveSessionCode) {
+         // Maybe show a "Waiting for teacher..." message?
+         // For now, we just stay on the current screen or show a success overlay?
+         // Simpler: Just stay until teacher moves index.
       } else {
-        // Game Finished
-        finishGame(newScore, newResults);
+          // Self-paced
+          if (currentLevelIndex < currentModule.levels.length - 1) {
+            setCurrentLevelIndex(prev => prev + 1);
+          } else {
+            finishGame(newScore, newResults);
+          }
       }
     }
   };
 
   const finishGame = (finalScore: number, finalResults: LevelResult[]) => {
     setViewState('result');
-    
-    // Trigger callback for real-time updates in teacher view
     if (currentModule && onGameComplete) {
         const totalPossible = currentModule.levels.reduce((sum, l) => sum + l.points, 0);
         onGameComplete(currentModule.id, finalScore, totalPossible);
@@ -77,22 +130,40 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, cur
   };
 
   const quitGame = () => {
+    if (liveSessionCode) return; // Cannot quit live session easily
     setViewState('study');
     setCurrentModule(null);
     setCurrentLevelIndex(0);
   };
 
-  // 1. Study Phase (Lesson Notes)
+  // --- RENDERING ---
+
+  // 0. Live Session Banner
+  const renderLiveBanner = () => {
+      if (!liveSessionCode) return null;
+      return (
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-2 text-center text-white text-xs font-bold tracking-widest uppercase animate-pulse mb-4 rounded-lg shadow-lg flex items-center justify-center gap-2">
+              <Zap className="w-3 h-3 fill-white" /> Live Session Active
+          </div>
+      );
+  };
+
+  // 1. Study Phase
   if (viewState === 'study' && currentModule) {
       return (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right duration-500 pb-12">
+              {renderLiveBanner()}
               <div className="flex items-center justify-between">
-                  <button onClick={quitGame} className="text-purple-300 hover:text-white flex items-center gap-2">
-                      <ArrowLeft className="w-4 h-4" /> Back
-                  </button>
-                  <div className="text-right">
+                  {!liveSessionCode && (
+                    <button onClick={quitGame} className="text-purple-300 hover:text-white flex items-center gap-2">
+                        <ArrowLeft className="w-4 h-4" /> Back
+                    </button>
+                  )}
+                  <div className="text-right flex-1">
                       <h2 className="text-2xl font-bold text-white">{currentModule.title}</h2>
-                      <p className="text-sm text-purple-300">Read carefully before playing!</p>
+                      <p className="text-sm text-purple-300">
+                          {liveSessionCode ? "Listen to your teacher..." : "Read carefully before playing!"}
+                      </p>
                   </div>
               </div>
 
@@ -108,7 +179,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, cur
                       <RichTextRenderer content={currentModule.lessonNote || "No notes available for this module."} />
                   </div>
 
-                  {/* Primary School Illustrations */}
                   {currentModule.classLevel === 'primary' && currentModule.illustrations && currentModule.illustrations.length > 0 && (
                       <div className="mt-8 pt-8 border-t border-white/10">
                           <h4 className="text-yellow-400 font-bold mb-4 uppercase text-xs tracking-wider">Pictographic Illustrations</h4>
@@ -129,23 +199,26 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, cur
                   )}
               </div>
 
-              <button 
-                onClick={() => setViewState('play')}
-                className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 text-lg transition transform hover:scale-[1.01]"
-              >
-                  I'm Ready to Play! <ChevronRight className="w-5 h-5" />
-              </button>
+              {!liveSessionCode && (
+                <button 
+                    onClick={() => setViewState('play')}
+                    className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 text-lg transition transform hover:scale-[1.01]"
+                >
+                    I'm Ready to Play! <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
           </div>
       );
   }
 
-  // 2. Game Finished View
+  // 2. Result View
   if (viewState === 'result' && currentModule) {
     const totalPossiblePoints = currentModule.levels.reduce((sum, lvl) => sum + lvl.points, 0);
     const percentage = totalPossiblePoints > 0 ? Math.round((score / totalPossiblePoints) * 100) : 0;
 
     return (
       <div className="max-w-3xl mx-auto space-y-8 animate-in zoom-in duration-500 py-8">
+        {renderLiveBanner()}
         <div className="text-center">
             <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-2xl mb-4 ${
                 percentage >= 50 ? 'bg-green-500 shadow-green-500/50' : 'bg-orange-500 shadow-orange-500/50'
@@ -191,22 +264,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, cur
              </div>
         </div>
 
-        <div className="flex justify-center gap-4">
-          <button 
-            onClick={quitGame}
-            className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition flex items-center gap-2"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Back to Dashboard
-          </button>
-          <button 
-            onClick={() => startGame(currentModule)}
-            className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 text-white font-bold rounded-xl transition flex items-center gap-2 shadow-lg"
-          >
-            <RotateCw className="w-5 h-5" />
-            Play Again
-          </button>
-        </div>
+        {!liveSessionCode && (
+            <div className="flex justify-center gap-4">
+            <button 
+                onClick={quitGame}
+                className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition flex items-center gap-2"
+            >
+                <ArrowLeft className="w-5 h-5" />
+                Back to Dashboard
+            </button>
+            <button 
+                onClick={() => startGame(currentModule)}
+                className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 text-white font-bold rounded-xl transition flex items-center gap-2 shadow-lg"
+            >
+                <RotateCw className="w-5 h-5" />
+                Play Again
+            </button>
+            </div>
+        )}
       </div>
     );
   }
@@ -214,20 +289,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ modules, cur
   // 3. Active Gameplay View
   if (viewState === 'play' && currentModule) {
     const activeLevel = currentModule.levels[currentLevelIndex];
-    // Safety check if level exists
-    if (!activeLevel) {
-       return null;
-    }
+    if (!activeLevel) return null;
 
     return (
       <div className="space-y-4">
+        {renderLiveBanner()}
         <div className="flex items-center justify-between text-white/60 text-sm max-w-4xl mx-auto">
-          <button onClick={quitGame} className="hover:text-white transition">Exit Game</button>
+          {!liveSessionCode && <button onClick={quitGame} className="hover:text-white transition">Exit Game</button>}
           <span>Level {currentLevelIndex + 1} of {currentModule.levels.length}</span>
           <span>Score: {score}</span>
         </div>
         <GameplayView 
-          key={activeLevel.id} // Key ensures component resets on level change
+          key={activeLevel.id} 
           level={activeLevel}
           onComplete={handleLevelComplete}
         />

@@ -30,6 +30,8 @@ export default function App() {
   
   // Session State
   const [activeSession, setActiveSession] = useState<Session | undefined>(undefined);
+  // Specifically for Student View: which session did they join?
+  const [studentActiveSessionId, setStudentActiveSessionId] = useState<string | undefined>(undefined);
 
   // Sync Teacher Auth from Hook to App State
   useEffect(() => {
@@ -84,6 +86,7 @@ export default function App() {
           if (sessionManager.isSessionValid(code)) {
               setUserRole('student');
               setIsAuthenticated(true);
+              setStudentActiveSessionId(code); // Track which session student is in
               
               // 2. Join Session via Manager
               sessionManager.joinSession(code, name);
@@ -115,6 +118,7 @@ export default function App() {
       setIsAuthenticated(false);
       setActiveView('dashboard');
       setCurrentModule(null);
+      setStudentActiveSessionId(undefined);
   };
 
   const handleGameComplete = (moduleId: string, score: number, totalPoints: number) => {
@@ -217,6 +221,7 @@ export default function App() {
             progress={studentProgress}
             setProgress={setStudentProgress}
             onGameComplete={handleGameComplete}
+            activeSessionId={studentActiveSessionId}
           />
         )}
       </div>

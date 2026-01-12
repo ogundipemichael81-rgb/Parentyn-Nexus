@@ -118,4 +118,9 @@ export interface Session {
   created_at: string;      // Timestamp
   active_status: boolean;  // Boolean status
   students: string[];      // List of joined student names (kept for UI display)
+  
+  // Real-time Sync State
+  current_module_id?: string;
+  current_level_index?: number;
+  sync_state: 'waiting' | 'lesson_note' | 'playing' | 'paused' | 'finished';
 }

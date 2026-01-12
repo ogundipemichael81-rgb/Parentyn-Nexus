@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown } from 'lucide-react';
+import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio } from 'lucide-react';
 import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level, Session } from '../types';
 import { GAME_TEMPLATES } from '../constants';
 import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote } from '../services/aiService';
+import { sessionManager } from '../services/sessionManager';
+import { useSessionSync } from '../hooks/useSessionSync';
 import { NavButton, StatCard, Step, RichTextRenderer } from './Shared';
 import { GameplayView } from './GameplayView';
 
@@ -25,6 +27,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 }) => {
   const [generatedModule, setGeneratedModule] = useState<GameModule | null>(null);
   const [editingModule, setEditingModule] = useState<GameModule | null>(null);
+
+  // Sync the active session to get real-time updates of student joins
+  const liveSession = useSessionSync(activeSession?.session_id);
 
   const handleEditModule = (module: GameModule) => {
     setEditingModule(module);
@@ -88,7 +93,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {activeView === 'dashboard' && (
             <DashboardView 
                 modules={modules} 
-                activeSession={activeSession} 
+                activeSession={liveSession} // Use the synced session
                 onCreateSession={onCreateSession} 
                 onEndSession={onEndSession} 
                 teacherName={teacherName}
@@ -297,13 +302,49 @@ const DashboardView: React.FC<{
     : 0;
   
   const [copied, setCopied] = useState(false);
-  const copyCode = () => {
-      if (activeSession) {
-          navigator.clipboard.writeText(activeSession.session_id);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
+  
+  const handleBroadcastModule = (moduleId: string) => {
+      if (!activeSession) return;
+      const mod = modules.find(m => m.id === moduleId);
+      if (mod) {
+          sessionManager.updateSessionState(activeSession.session_id, {
+              current_module_id: moduleId,
+              sync_state: 'lesson_note',
+              current_level_index: -1 // -1 implies lesson note phase
+          });
       }
   };
+
+  const handleLevelChange = (direction: 'next' | 'prev' | 'reset') => {
+      if (!activeSession || !activeSession.current_module_id) return;
+      const mod = modules.find(m => m.id === activeSession.current_module_id);
+      if (!mod) return;
+
+      let nextIndex = activeSession.current_level_index ?? -1;
+      let nextState = activeSession.sync_state;
+
+      if (direction === 'reset') {
+          nextIndex = -1;
+          nextState = 'lesson_note';
+      } else if (direction === 'next') {
+          if (nextIndex < mod.levels.length - 1) {
+              nextIndex++;
+              nextState = 'playing';
+          }
+      } else if (direction === 'prev') {
+          if (nextIndex > -1) {
+              nextIndex--;
+              nextState = nextIndex === -1 ? 'lesson_note' : 'playing';
+          }
+      }
+
+      sessionManager.updateSessionState(activeSession.session_id, {
+          current_level_index: nextIndex,
+          sync_state: nextState
+      });
+  };
+
+  const activeModule = modules.find(m => m.id === activeSession?.current_module_id);
 
   return (
     <div className="space-y-6">
@@ -314,46 +355,97 @@ const DashboardView: React.FC<{
           </h2>
           <p className="text-purple-300">Real-time performance metrics</p>
         </div>
-        <div className="flex gap-2">
-            <button className="bg-white/10 hover:bg-white/20 text-white text-sm px-4 py-2 rounded-lg border border-white/10">Export Report</button>
-        </div>
       </div>
 
       {/* Session Control Panel */}
       <div className="bg-gradient-to-r from-indigo-900 to-purple-900 rounded-2xl p-6 border border-white/20 shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
           
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="text-center md:text-left">
-                  <h3 className="text-xl font-bold text-white flex items-center justify-center md:justify-start gap-2">
-                      <Zap className="w-5 h-5 text-yellow-400 fill-yellow-400" /> Classroom Connectivity
-                  </h3>
-                  <p className="text-purple-200 text-sm mt-1">Manage live sessions and student access.</p>
+          <div className="relative z-10 flex flex-col gap-6">
+              <div className="flex justify-between items-start">
+                <div className="text-left">
+                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Zap className="w-5 h-5 text-yellow-400 fill-yellow-400" /> Classroom Connectivity
+                    </h3>
+                    <p className="text-purple-200 text-sm mt-1">Manage live sessions and student access.</p>
+                </div>
+                {activeSession && activeSession.active_status && (
+                    <div className="flex items-center gap-4 bg-black/30 p-2 pr-4 rounded-xl border border-white/10 backdrop-blur-md">
+                        <div className="text-center px-4 border-r border-white/10">
+                            <p className="text-[10px] text-white/50 uppercase">Code</p>
+                            <p className="text-2xl font-mono font-bold text-white tracking-widest">{activeSession.session_id}</p>
+                        </div>
+                        <p className="text-sm text-white/80">
+                            <Users className="w-4 h-4 inline mr-1" /> {activeSession.students.length} <span className="hidden md:inline">Online</span>
+                        </p>
+                    </div>
+                )}
               </div>
 
               {activeSession && activeSession.active_status ? (
-                  <div className="flex flex-col items-center animate-in zoom-in duration-300">
-                      <p className="text-xs text-green-300 font-bold uppercase tracking-widest mb-2 flex items-center gap-1">
-                          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Session Active
-                      </p>
-                      <div className="flex items-center gap-4 bg-black/30 p-4 rounded-xl border border-white/10 backdrop-blur-md">
-                          <div className="text-center">
-                              <p className="text-xs text-white/50 uppercase">Class Code</p>
-                              <p className="text-4xl font-mono font-bold text-white tracking-widest">{activeSession.session_id}</p>
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10 animate-in fade-in">
+                      <h4 className="text-white font-bold text-sm mb-3 uppercase tracking-wide flex items-center gap-2">
+                          <Radio className={`w-4 h-4 ${activeModule ? 'text-green-400 animate-pulse' : 'text-gray-400'}`} /> 
+                          Broadcast Controls
+                      </h4>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Module Selector */}
+                          <div>
+                              <p className="text-xs text-purple-300 mb-2">Active Module</p>
+                              <div className="flex gap-2">
+                                  <select 
+                                    className="bg-black/30 border border-white/20 text-white rounded-lg px-3 py-2 text-sm flex-1 outline-none"
+                                    onChange={(e) => handleBroadcastModule(e.target.value)}
+                                    value={activeSession.current_module_id || ''}
+                                  >
+                                      <option value="">-- Select Module to Broadcast --</option>
+                                      {publishedModules.map(m => (
+                                          <option key={m.id} value={m.id}>{m.title}</option>
+                                      ))}
+                                  </select>
+                              </div>
+                              {activeModule && (
+                                  <div className="mt-2 text-xs text-green-300 flex items-center gap-1">
+                                      <Check className="w-3 h-3" /> Broadcasting: {activeModule.title}
+                                  </div>
+                              )}
                           </div>
-                          <div className="h-10 w-px bg-white/10"></div>
-                          <button 
-                              onClick={copyCode}
-                              className="p-3 bg-white/5 hover:bg-white/10 rounded-lg text-white transition border border-white/5"
-                              title="Copy Code"
-                          >
-                             {copied ? <Check className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5" />}
-                          </button>
+
+                          {/* Level Controls */}
+                          <div className={`transition-opacity ${!activeModule ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                              <p className="text-xs text-purple-300 mb-2">Live Navigation</p>
+                              <div className="flex items-center gap-2 bg-black/30 p-1.5 rounded-lg border border-white/10 w-fit">
+                                  <button 
+                                    onClick={() => handleLevelChange('prev')}
+                                    className="p-2 hover:bg-white/10 text-white rounded transition disabled:opacity-30"
+                                    disabled={!activeSession.current_module_id}
+                                    title="Previous Slide"
+                                  >
+                                      <ArrowUp className="w-4 h-4 -rotate-90" />
+                                  </button>
+                                  <div className="px-4 text-center min-w-[100px]">
+                                      <p className="text-white font-bold text-sm">
+                                          {activeSession.current_level_index === undefined || activeSession.current_level_index === -1 
+                                            ? 'Lesson Note' 
+                                            : `Level ${activeSession.current_level_index + 1}`
+                                          }
+                                      </p>
+                                  </div>
+                                  <button 
+                                    onClick={() => handleLevelChange('next')}
+                                    className="p-2 hover:bg-white/10 text-white rounded transition disabled:opacity-30"
+                                    disabled={!activeSession.current_module_id}
+                                    title="Next Slide"
+                                  >
+                                      <ArrowDown className="w-4 h-4 -rotate-90" />
+                                  </button>
+                              </div>
+                          </div>
                       </div>
-                      <div className="flex items-center gap-4 mt-3">
-                           <p className="text-sm text-white/60">
-                               <Users className="w-4 h-4 inline mr-1" /> {activeSession.students.length} Joined
-                           </p>
+
+                      <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center">
+                           <p className="text-xs text-white/40">Students will automatically sync to your selected view.</p>
                            <button 
                                 onClick={() => onEndSession && onEndSession(activeSession.session_id)}
                                 className="text-xs text-red-300 hover:text-red-200 flex items-center gap-1 bg-red-500/10 px-3 py-1.5 rounded-full border border-red-500/20 transition hover:bg-red-500/20"
@@ -365,7 +457,7 @@ const DashboardView: React.FC<{
               ) : (
                   <button 
                       onClick={onCreateSession}
-                      className="px-6 py-4 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-3 group"
+                      className="w-fit px-6 py-4 bg-white text-purple-900 font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center gap-3 group"
                   >
                       <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center group-hover:bg-purple-200 transition">
                           <Play className="w-5 h-5 text-purple-700 fill-purple-700 ml-1" />
@@ -385,6 +477,7 @@ const DashboardView: React.FC<{
         <StatCard icon={Trophy} label="Global Avg" value={`${avgScore}%`} color="yellow" />
       </div>
 
+      {/* Activity Log (Same as before) */}
       <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
         <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-white">Recent Activity Log</h3>
@@ -417,10 +510,12 @@ const DashboardView: React.FC<{
   );
 };
 
+// ... (StudioView remains unchanged, omitting for brevity. It was not modified) ...
+
 interface StudioViewProps {
-  setGeneratedModule: (m: GameModule | null) => void;
+  setGeneratedModule: React.Dispatch<React.SetStateAction<GameModule | null>>;
   generatedModule: GameModule | null;
-  setModules: (m: GameModule[]) => void;
+  setModules: (modules: GameModule[]) => void;
   modules: GameModule[];
   editingModule: GameModule | null;
   onClearEdit: () => void;
@@ -1123,6 +1218,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                     </div>
                  </div>
 
+                 {/* Rest of Editor UI ... */}
                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-6">
                      {/* Metadata Editor */}
                      <div className="bg-black/20 rounded-xl p-6 border border-white/10">
