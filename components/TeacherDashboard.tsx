@@ -119,6 +119,170 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
 // --- Sub Components for Teacher Views ---
 
+const LevelEditor: React.FC<{ level: Level; onSave: (l: Level) => void }> = ({ level, onSave }) => {
+  const [editedLevel, setEditedLevel] = useState<Level>({ ...level });
+
+  const handleChange = (field: keyof Level, value: any) => {
+    setEditedLevel(prev => ({ ...prev, [field]: value }));
+  };
+
+  return (
+    <div className="space-y-6 text-white p-2">
+      <div className="space-y-2">
+        <label className="text-xs uppercase text-gray-400 font-bold">Title</label>
+        <input
+          type="text"
+          value={editedLevel.title}
+          onChange={(e) => handleChange('title', e.target.value)}
+          className="w-full bg-black/20 border border-white/10 rounded-lg p-3 focus:border-yellow-400 outline-none"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs uppercase text-gray-400 font-bold">Challenge / Mission</label>
+        <textarea
+          value={editedLevel.challenge || ''}
+          onChange={(e) => handleChange('challenge', e.target.value)}
+          className="w-full bg-black/20 border border-white/10 rounded-lg p-3 focus:border-yellow-400 outline-none h-24"
+        />
+      </div>
+
+      {editedLevel.type === 'quiz' && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs uppercase text-gray-400 font-bold">Question</label>
+            <textarea
+              value={editedLevel.question || ''}
+              onChange={(e) => handleChange('question', e.target.value)}
+              className="w-full bg-black/20 border border-white/10 rounded-lg p-3 focus:border-yellow-400 outline-none h-24"
+            />
+          </div>
+          <p className="text-xs text-yellow-400 italic">Note: Advanced option editing not enabled in quick edit.</p>
+        </div>
+      )}
+
+      {editedLevel.type === 'fill_blank' && (
+        <>
+            <div className="space-y-2">
+                <label className="text-xs uppercase text-gray-400 font-bold">Sentence (Use ___ for blank)</label>
+                <textarea
+                value={editedLevel.sentence || ''}
+                onChange={(e) => handleChange('sentence', e.target.value)}
+                className="w-full bg-black/20 border border-white/10 rounded-lg p-3 focus:border-yellow-400 outline-none"
+                />
+            </div>
+            <div className="space-y-2">
+                <label className="text-xs uppercase text-gray-400 font-bold">Correct Answer</label>
+                <input
+                type="text"
+                value={editedLevel.correctAnswer || ''}
+                onChange={(e) => handleChange('correctAnswer', e.target.value)}
+                className="w-full bg-black/20 border border-white/10 rounded-lg p-3 focus:border-yellow-400 outline-none"
+                />
+            </div>
+        </>
+      )}
+
+      <button
+        onClick={() => onSave(editedLevel)}
+        className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold transition shadow-lg"
+      >
+        Save Changes
+      </button>
+    </div>
+  );
+};
+
+const ModulesView: React.FC<{ modules: GameModule[], setCurrentModule: (m: GameModule | null) => void, onEdit: (m: GameModule) => void }> = ({ modules, onEdit }) => {
+    return (
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-white">Module Library</h2>
+                <div className="flex gap-2">
+                    <button className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition">Import</button>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {modules.map(m => (
+                    <div key={m.id} className="bg-white/10 p-6 rounded-xl border border-white/10 hover:border-white/30 transition flex justify-between items-start group">
+                        <div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <h3 className="text-xl font-bold text-white">{m.title}</h3>
+                                <span className={`text-[10px] uppercase px-2 py-0.5 rounded border ${m.status === 'draft' ? 'border-yellow-500 text-yellow-500' : 'border-green-500 text-green-500'}`}>
+                                    {m.status || 'Published'}
+                                </span>
+                            </div>
+                            <p className="text-sm text-purple-300 mb-4">{m.subject} • {m.grade} • {m.levels.length} Levels</p>
+                            <div className="flex gap-4 text-xs text-white/50">
+                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {m.metadata.estimatedTime}m</span>
+                                <span className="flex items-center gap-1"><Trophy className="w-3 h-3" /> {m.metadata.difficulty}</span>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                            <button onClick={() => onEdit(m)} className="p-2 bg-blue-500/20 text-blue-300 rounded hover:bg-blue-500/30 transition" title="Edit">
+                                <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button className="p-2 bg-red-500/20 text-red-300 rounded hover:bg-red-500/30 transition" title="Delete">
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const StudentsView: React.FC<{ students: Student[] }> = ({ students }) => {
+    return (
+        <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-white mb-6">Student Registry</h2>
+            <div className="bg-white/10 rounded-xl overflow-hidden border border-white/10">
+                <table className="w-full text-left text-white">
+                    <thead className="bg-black/20 text-xs uppercase text-gray-400 font-bold">
+                        <tr>
+                            <th className="p-4">Student Name</th>
+                            <th className="p-4">Modules Played</th>
+                            <th className="p-4">Avg Score</th>
+                            <th className="p-4">Current Streak</th>
+                            <th className="p-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {students.map(s => (
+                            <tr key={s.id} className="border-t border-white/5 hover:bg-white/5 transition">
+                                <td className="p-4 font-bold flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-xs">
+                                        {s.name.charAt(0)}
+                                    </div>
+                                    {s.name}
+                                </td>
+                                <td className="p-4">{s.plays}</td>
+                                <td className="p-4">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-16 h-2 bg-white/10 rounded-full overflow-hidden">
+                                            <div className="h-full bg-green-500" style={{ width: `${s.avgScore}%` }}></div>
+                                        </div>
+                                        <span className="text-sm">{s.avgScore}%</span>
+                                    </div>
+                                </td>
+                                <td className="p-4">
+                                    <div className="flex items-center gap-1 text-orange-400">
+                                        <Flame className="w-4 h-4 fill-orange-400" /> {s.streak}
+                                    </div>
+                                </td>
+                                <td className="p-4 text-right">
+                                    <button className="text-white/50 hover:text-white transition">Details</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 const DashboardView: React.FC<{ 
     modules: GameModule[];
     activeSession?: Session;
@@ -383,24 +547,33 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
       setIsProcessingAction(true);
 
       try {
-          const newLevels = await generateSpecificLevel(type, generatedModule.lessonNote || "", subject || generatedModule.subject || "General", classLevel || generatedModule.classLevel || 'secondary');
+          const newLevels = await generateSpecificLevel(
+              type, 
+              generatedModule.lessonNote || "", 
+              subject || generatedModule.subject || "General", 
+              classLevel || generatedModule.classLevel || 'secondary'
+          );
           
-          setGeneratedModule(prev => prev ? ({
-              ...prev,
-              levels: [...prev.levels, ...newLevels],
-              metadata: {
-                  ...prev.metadata,
-                  estimatedTime: prev.metadata.estimatedTime + 5 // Roughly add 5 mins per new activity
-              }
-          }) : null);
-          setEditTime(prev => prev + 5);
-          
-          // Auto-select newly added levels
-          setSelectedLevelIds(prev => {
-              const next = new Set(prev);
-              newLevels.forEach(l => next.add(l.id));
-              return next;
-          });
+          if (newLevels && newLevels.length > 0) {
+              setGeneratedModule(prev => prev ? ({
+                  ...prev,
+                  levels: [...prev.levels, ...newLevels],
+                  metadata: {
+                      ...prev.metadata,
+                      estimatedTime: prev.metadata.estimatedTime + (type === 'question_bank' ? 10 : 5) 
+                  }
+              }) : null);
+              setEditTime(prev => prev + (type === 'question_bank' ? 10 : 5));
+              
+              // Auto-select newly added levels
+              setSelectedLevelIds(prev => {
+                  const next = new Set(prev);
+                  newLevels.forEach(l => next.add(l.id));
+                  return next;
+              });
+          } else {
+              console.warn("No levels generated");
+          }
 
       } catch (e) {
           console.error("Failed to add level", e);
@@ -414,13 +587,18 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
       if (!generatedModule) return;
       setIsProcessingAction(true);
       try {
-          const extendedNote = await extendLessonNote(
+          const extensionContent = await extendLessonNote(
               generatedModule.lessonNote || "", 
               subject || generatedModule.subject || "General", 
               classLevel || generatedModule.classLevel || 'secondary',
               extensionPrompt
           );
-          setGeneratedModule(prev => prev ? ({ ...prev, lessonNote: extendedNote }) : null);
+          
+          const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const newNote = (generatedModule.lessonNote || "") + 
+              `\n\n---\n#### 📝 Note Extension (${timestamp})\n${extensionContent}`;
+
+          setGeneratedModule(prev => prev ? ({ ...prev, lessonNote: newNote }) : null);
           setExtensionPrompt('');
           setShowExtensionInput(false);
       } catch (e) {
@@ -1146,218 +1324,4 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
       </div>
     </div>
   );
-};
-
-const ModulesView: React.FC<{ 
-    modules: GameModule[]; 
-    setCurrentModule: (m: GameModule | null) => void; 
-    onEdit: (m: GameModule) => void;
-}> = ({ modules, setCurrentModule, onEdit }) => {
-  return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
-         <h2 className="text-3xl font-bold text-white">Module Library</h2>
-         <button className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg flex items-center gap-2">
-            <Settings className="w-4 h-4" /> Manage
-         </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {modules.map(module => (
-           <div key={module.id} className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 group hover:-translate-y-1 transition duration-300">
-              <div className="flex justify-between items-start mb-4">
-                 <div className={`p-3 rounded-xl bg-gradient-to-br ${module.template.bgColor} shadow-lg`}>
-                    <BookOpen className="w-6 h-6 text-white" />
-                 </div>
-                 <div className="flex flex-col items-end gap-2">
-                    <span className={`px-2 py-1 text-xs font-bold rounded uppercase tracking-wider ${module.status === 'published' ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'}`}>
-                        {module.status || 'Draft'}
-                    </span>
-                 </div>
-              </div>
-              
-              <h3 className="text-xl font-bold text-white mb-1 group-hover:text-blue-300 transition">{module.title}</h3>
-              <p className="text-sm text-purple-300 mb-4">{module.subject} • {module.grade}</p>
-              
-              <div className="flex items-center gap-4 text-xs text-white/50 mb-6">
-                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {module.metadata.estimatedTime}m</span>
-                 <span className="flex items-center gap-1"><Layers className="w-3 h-3" /> {module.levels.length} Levels</span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                 <button 
-                    onClick={() => onEdit(module)}
-                    className="py-2 bg-white/5 hover:bg-white/10 text-white font-bold rounded-lg text-sm border border-white/10"
-                 >
-                    Edit
-                 </button>
-                 <button className="py-2 bg-white/5 hover:bg-white/10 text-white font-bold rounded-lg text-sm border border-white/10">
-                    Preview
-                 </button>
-              </div>
-           </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const StudentsView: React.FC<{ students: Student[] }> = ({ students }) => {
-  return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <h2 className="text-3xl font-bold text-white">Student Registry</h2>
-      
-      <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 overflow-hidden">
-         <div className="grid grid-cols-12 px-6 py-4 bg-black/20 text-xs font-bold text-purple-300 uppercase tracking-wider">
-             <div className="col-span-1">#</div>
-             <div className="col-span-5">Student Name</div>
-             <div className="col-span-2 text-center">Modules Played</div>
-             <div className="col-span-2 text-center">Avg Score</div>
-             <div className="col-span-2 text-center">Streak</div>
-         </div>
-         
-         <div className="divide-y divide-white/10">
-             {students.map((student, i) => (
-                 <div key={student.id} className="grid grid-cols-12 px-6 py-4 items-center hover:bg-white/5 transition">
-                     <div className="col-span-1 text-white/50 font-mono">{(i + 1).toString().padStart(2, '0')}</div>
-                     <div className="col-span-5">
-                         <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs">
-                                 {student.name.charAt(0)}
-                             </div>
-                             <span className="text-white font-medium">{student.name}</span>
-                         </div>
-                     </div>
-                     <div className="col-span-2 text-center text-white">{student.plays}</div>
-                     <div className="col-span-2 text-center">
-                         <span className={`font-bold ${student.avgScore >= 80 ? 'text-green-400' : student.avgScore >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
-                             {student.avgScore}%
-                         </span>
-                     </div>
-                     <div className="col-span-2 text-center flex items-center justify-center gap-1 text-orange-400">
-                         <Flame className="w-4 h-4 fill-orange-400" />
-                         <span className="font-bold">{student.streak}</span>
-                     </div>
-                 </div>
-             ))}
-         </div>
-      </div>
-    </div>
-  );
-};
-
-const LevelEditor: React.FC<{ level: Level, onSave: (l: Level) => void }> = ({ level, onSave }) => {
-    const [data, setData] = useState<Level>(level);
-
-    useEffect(() => {
-        setData(level);
-    }, [level]);
-
-    const handleChange = (field: keyof Level, val: any) => {
-        setData(prev => ({ ...prev, [field]: val }));
-    };
-
-    return (
-        <div className="space-y-6">
-            <div className="space-y-4">
-                <div>
-                    <label className="block text-xs uppercase text-purple-300 font-bold mb-1">Level Title</label>
-                    <input 
-                        className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 outline-none"
-                        value={data.title}
-                        onChange={e => handleChange('title', e.target.value)}
-                    />
-                </div>
-                <div>
-                    <label className="block text-xs uppercase text-purple-300 font-bold mb-1">Challenge Description</label>
-                    <textarea 
-                        className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 outline-none h-20"
-                        value={data.challenge || ''}
-                        onChange={e => handleChange('challenge', e.target.value)}
-                    />
-                </div>
-            </div>
-
-            {/* Type Specific Fields */}
-            <div className="pt-4 border-t border-white/10">
-                <h4 className="text-white font-bold mb-4 flex items-center gap-2">
-                    <Settings className="w-4 h-4" /> Activity Configuration ({data.type})
-                </h4>
-                
-                {data.type === 'quiz' && (
-                     <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs uppercase text-white/50 mb-1">Question</label>
-                            <textarea 
-                                className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 outline-none h-24"
-                                value={data.question || ''}
-                                onChange={e => handleChange('question', e.target.value)}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="block text-xs uppercase text-white/50">Options</label>
-                            {data.options?.map((opt, i) => (
-                                <div key={i} className="flex gap-2">
-                                    <div 
-                                        onClick={() => {
-                                            const newOpts = data.options!.map((o, idx) => ({ ...o, correct: idx === i }));
-                                            handleChange('options', newOpts);
-                                        }}
-                                        className={`w-6 h-6 rounded-full border flex items-center justify-center cursor-pointer ${opt.correct ? 'bg-green-500 border-green-500' : 'border-white/30'}`}
-                                    >
-                                        {opt.correct && <Check className="w-3 h-3 text-white" />}
-                                    </div>
-                                    <input 
-                                        className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white"
-                                        value={opt.text}
-                                        onChange={(e) => {
-                                            const newOpts = [...(data.options || [])];
-                                            newOpts[i] = { ...newOpts[i], text: e.target.value };
-                                            handleChange('options', newOpts);
-                                        }}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                     </div>
-                )}
-
-                {data.type === 'fill_blank' && (
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs uppercase text-white/50 mb-1">Sentence (Use ___ for blank)</label>
-                            <input 
-                                className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 outline-none"
-                                value={data.sentence || ''}
-                                onChange={e => handleChange('sentence', e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs uppercase text-white/50 mb-1">Correct Answer</label>
-                            <input 
-                                className="w-full bg-black/20 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-blue-500 outline-none"
-                                value={data.correctAnswer || ''}
-                                onChange={e => handleChange('correctAnswer', e.target.value)}
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {/* Simplified placeholder for other types to keep file size reasonable */}
-                {(data.type === 'flashcards' || data.type === 'matching') && (
-                    <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-200 text-sm">
-                        <p>Complex list editing for {data.type} is simplified in this preview editor.</p>
-                        <p className="mt-2 text-xs opacity-70">Items: {(data.flashcards || data.pairs || []).length}</p>
-                    </div>
-                )}
-            </div>
-
-            <button 
-                onClick={() => onSave(data)}
-                className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition"
-            >
-                Save Configuration
-            </button>
-        </div>
-    );
 };

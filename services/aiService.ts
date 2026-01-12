@@ -41,26 +41,187 @@ export const verifyContext = async (context: string): Promise<{approved: boolean
   }
 };
 
+export const generateGameContent = async (
+    lessonText: string,
+    image: { mimeType: string, data: string } | null,
+    template: GameTemplate,
+    customContext: string | undefined,
+    classLevel: ClassLevel,
+    subject: string,
+    category: ModuleCategory,
+    noteLength: NoteLength
+): Promise<GameModule> => {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) throw new Error("No API Key");
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const contextDesc = customContext || template.theme;
+    
+    const prompt = `
+    Role: Curriculum Expert & Game Designer.
+    Task: Create a learning module for ${classLevel} students in ${subject}.
+    Category: ${category}.
+    Note Detail: ${noteLength}.
+    Theme: ${contextDesc}.
+    
+    Source Material:
+    "${lessonText.substring(0, 10000)}"
+
+    Instructions:
+    Generate a JSON object containing:
+    1. "title": An engaging title for the module.
+    2. "lessonNote": A structured markdown lesson note (use headings, bullet points).
+    3. "metadata": { "difficulty": "easy"|"medium"|"hard", "estimatedTime": number (minutes) }
+    4. "levels": An array of exactly 3 levels in this order:
+       - Level 1: "flashcards" (Concept Deck). Array of {front, back}.
+       - Level 2: "matching" (Logic Links). Array of {left, right}.
+       - Level 3: "quiz" (Final Challenge). Array of {question, options:[{id, text, correct}], challenge}.
+    
+    For "quiz", provide 3 questions.
+    For "flashcards", provide 5 cards.
+    For "matching", provide 5 pairs.
+    `;
+
+    const parts: any[] = [{ text: prompt }];
+    if (image) {
+        parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview', // Using Pro for complex content generation
+            contents: { parts },
+            config: {
+                responseMimeType: "application/json",
+            }
+        });
+
+        const text = response.text;
+        if(!text) throw new Error("No response");
+        
+        const data = JSON.parse(text);
+        const moduleId = `mod_${Date.now()}`;
+        const timestamp = Date.now();
+
+        // Transform JSON to strict types
+        const levels: Level[] = [];
+
+        if (data.levels && Array.isArray(data.levels)) {
+            data.levels.forEach((l: any, i: number) => {
+                const levelId = `l_${moduleId}_${i}`;
+                if (l.type === 'flashcards' || (!l.type && l.flashcards)) {
+                    levels.push({
+                        id: levelId,
+                        title: l.title || "Concept Deck",
+                        type: 'flashcards',
+                        points: 50,
+                        challenge: l.challenge || "Review the key concepts.",
+                        flashcards: l.flashcards?.map((f: any, fi: number) => ({ id: `f_${timestamp}_${fi}`, front: f.front, back: f.back })) || []
+                    });
+                } else if (l.type === 'matching' || (!l.type && l.pairs)) {
+                    levels.push({
+                         id: levelId,
+                         title: l.title || "Logic Links",
+                         type: 'matching',
+                         points: 100,
+                         challenge: l.challenge || "Match the terms.",
+                         pairs: (l.pairs || l.matching_pairs)?.map((p: any, pi: number) => ({ id: `p_${timestamp}_${pi}`, left: p.left, right: p.right })) || []
+                    });
+                } else if (l.type === 'quiz' || (!l.type && (l.questions || l.quiz_questions))) {
+                    const questions = l.questions || l.quiz_questions || [];
+                    // Flatten quiz into multiple levels if API returned multiple questions in one object, 
+                    // BUT our UI expects one question per 'quiz' level usually? 
+                    // Actually Types.ts defines Level as having `question` (singular) and `options`.
+                    // So we should map each question to a separate level or just pick one?
+                    // The prompt asked for "levels" array. If the model returned a single "quiz" level with multiple questions, we must split it.
+                    // However, `data.levels` loop implies the model structures it as levels. 
+                    // If the model followed instructions, it might have returned one level object with multiple questions which isn't standard in our `Level` type (singular `question`).
+                    // Let's assume for a robust fix: If the level object has `questions` array, we create multiple levels.
+                    if (Array.isArray(questions) && questions.length > 0) {
+                         questions.forEach((q: any, qi: number) => {
+                             levels.push({
+                                 id: `${levelId}_${qi}`,
+                                 title: l.title ? `${l.title} (${qi+1})` : `Quiz Challenge ${qi+1}`,
+                                 type: 'quiz',
+                                 points: 20,
+                                 challenge: l.challenge || q.context_scenario || "Test your knowledge.",
+                                 question: q.question,
+                                 options: q.options?.map((opt: any, oi: number) => ({
+                                     id: opt.id || String.fromCharCode(97 + oi),
+                                     text: typeof opt === 'string' ? opt : opt.text,
+                                     correct: typeof opt === 'object' ? opt.correct : (q.correct_answer === opt || q.correct_option_letter === String.fromCharCode(65+oi)) // Best guess fallback
+                                 })) || []
+                             });
+                         });
+                    } else if (l.question) {
+                         // Single question format
+                         levels.push({
+                            id: levelId,
+                            title: l.title || "Quiz Challenge",
+                            type: 'quiz',
+                            points: 20,
+                            challenge: l.challenge,
+                            question: l.question,
+                            options: l.options?.map((opt: any, oi: number) => ({
+                                id: opt.id || String.fromCharCode(97 + oi),
+                                text: typeof opt === 'string' ? opt : opt.text,
+                                correct: opt.correct || false
+                            })) || []
+                         });
+                    }
+                }
+            });
+        }
+
+        return {
+            id: moduleId,
+            title: data.title || "Untitled Module",
+            template: template,
+            levels: levels,
+            metadata: {
+                createdAt: new Date().toISOString(),
+                difficulty: data.metadata?.difficulty || 'medium',
+                estimatedTime: data.metadata?.estimatedTime || 15
+            },
+            subject,
+            grade: classLevel === 'primary' ? 'Grade 4-6' : 'JSS 1-3',
+            lessonNote: data.lessonNote || "",
+            category,
+            classLevel,
+            status: 'draft'
+        };
+
+    } catch (e) {
+        console.error("Content Generation Failed", e);
+        throw e;
+    }
+};
+
 // --- Specialized Generators ---
 
 export const extendLessonNote = async (currentNote: string, subject: string, classLevel: ClassLevel, instruction?: string): Promise<string> => {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) return currentNote + "\n\n(Extension failed: No API Key)";
+    if (!apiKey) return "\n\n**Extension Failed:** No API Key available.";
 
     const ai = new GoogleGenAI({ apiKey });
     
     const prompt = `
         You are an expert curriculum developer for ${classLevel} school ${subject}.
         
-        TASK: Extend and deepen the following lesson note. 
-        ${instruction ? `TEACHER INSTRUCTION: "${instruction}"` : '- Make it "Extensive" in detail.'}
-        - If no specific instruction is provided, add more real-world examples and analysis.
-        - Keep the Markdown formatting (### Headers, **bold**, - lists).
-        - Maintain the same topic.
-        - Do not simply repeat the existing note; expand upon it or modify it as requested.
+        TASK: Write an ADDENDUM or CONTINUATION to the existing lesson note based on the specific instruction below.
         
-        CURRENT NOTE:
-        ${currentNote}
+        TEACHER INSTRUCTION: "${instruction || "Add more real-world examples and advanced analysis."}"
+        
+        RULES:
+        - Output ONLY the new additional content.
+        - Do NOT repeat the existing note content provided below.
+        - Start with a clear Markdown Header (### Title of Extension).
+        - Maintain the same markdown formatting style.
+        - Provide high-quality, rigorous academic content.
+        
+        CONTEXT (Existing Note End):
+        "${currentNote.substring(Math.max(0, currentNote.length - 2000))}"
     `;
 
     try {
@@ -71,10 +232,10 @@ export const extendLessonNote = async (currentNote: string, subject: string, cla
                 thinkingConfig: { thinkingBudget: 1024 }
             }
         });
-        return response.text || currentNote;
+        return response.text || "";
     } catch (e) {
         console.error("Extension failed", e);
-        return currentNote;
+        return "\n\n**System Error:** Could not generate extension.";
     }
 };
 
@@ -129,8 +290,8 @@ export const generateSpecificLevel = async (
             }
         };
     } else if (activityType === 'quiz' || activityType === 'question_bank') {
-        const count = activityType === 'question_bank' ? 10 : 3;
-        prompt += `\nGenerate ${count} multiple choice questions. ${activityType === 'question_bank' ? 'Create a comprehensive Question Bank covering the whole note.' : 'Create a short assessment quiz.'}`;
+        const count = activityType === 'question_bank' ? 5 : 3; // Reduced question bank size slightly to ensure reliability
+        prompt += `\nGenerate ${count} distinct multiple choice questions. ${activityType === 'question_bank' ? 'Create a question bank covering different aspects of the note.' : 'Create a short assessment quiz.'}`;
         schema = {
             type: Type.OBJECT,
             properties: {
@@ -244,7 +405,7 @@ export const generateSpecificLevel = async (
              const isBoss = activityType === 'boss_level';
              levels.push({
                 id: `lvl_qz_${timestamp}_${i}`,
-                title: isBoss ? "BOSS LEVEL: Final Challenge" : (activityType === 'question_bank' ? `Question Bank #${i+1}` : `Quiz Challenge`),
+                title: isBoss ? "BOSS LEVEL: Final Challenge" : (activityType === 'question_bank' ? `Question Bank ${i+1}` : `Quiz Challenge`),
                 type: "quiz",
                 points: isBoss ? 200 : 20,
                 challenge: q.context_scenario || "Test your knowledge",
@@ -259,390 +420,4 @@ export const generateSpecificLevel = async (
     }
 
     return levels;
-};
-
-
-// --- Main Full Generator (Existing) ---
-
-const generateWithGemini = async (
-    textInput: string, 
-    fileInput: { mimeType: string, data: string } | null,
-    template: GameTemplate, 
-    customContext: string | undefined,
-    targetClassLevel: ClassLevel,
-    subjectInput: string,
-    category: ModuleCategory,
-    noteLength: NoteLength
-): Promise<GameModule> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("No API Key");
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  // Use custom context if provided
-  const contextName = customContext ? "Custom Context" : template.name;
-  const contextTheme = customContext ? customContext : template.theme;
-
-  const curriculumSchema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      // Step 1: Lesson Notes Generation
-      lesson_note_title: { type: Type.STRING },
-      lesson_note_content: { type: Type.STRING, description: "The core lesson text. Structured with Markdown headers (###), bold (**), and lists (-)." },
-      
-      // Primary School Specific: Pictographic Descriptions
-      illustrations: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            description: { type: Type.STRING, description: "Visual description of the image" },
-            caption: { type: Type.STRING }
-          },
-          required: ["description", "caption"]
-        }
-      },
-
-      estimated_study_time: { type: Type.INTEGER },
-      difficulty_level: { type: Type.STRING, enum: ["easy", "medium", "hard"] },
-      
-      // Game Data Sections
-      flashcards: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            front: { type: Type.STRING },
-            back: { type: Type.STRING }
-          },
-          required: ["front", "back"]
-        }
-      },
-      matching_pairs: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            left: { type: Type.STRING },
-            right: { type: Type.STRING }
-          },
-          required: ["left", "right"]
-        }
-      },
-      quiz_questions: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            question: { type: Type.STRING },
-            options: { type: Type.ARRAY, items: { type: Type.STRING } },
-            correct_option_letter: { type: Type.STRING },
-            context_scenario: { type: Type.STRING }
-          },
-          required: ["question", "options", "correct_option_letter", "context_scenario"]
-        }
-      },
-      fill_in_blanks: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            sentence: { type: Type.STRING, description: "Use '___' for blank" },
-            answer: { type: Type.STRING },
-            context: { type: Type.STRING }
-          },
-          required: ["sentence", "answer", "context"]
-        }
-      }
-    },
-    required: ["lesson_note_title", "lesson_note_content", "illustrations", "flashcards", "matching_pairs", "quiz_questions", "fill_in_blanks", "estimated_study_time", "difficulty_level"]
-  };
-
-  const refineryPrompt = `
-You are the Parentyn Nexus Refinery Engine using Gemini 3 Pro. 
-You are an expert curriculum developer.
-
-**CRITICAL INSTRUCTION:**
-Strictly adhere to **NERDC (Nigerian Educational Research and Development Council)** and **International K-12 Academic Standards**.
-While the 'Theme' (${contextTheme}) provides a setting, the **educational content must remain rigorous, accurate, and standard**. Do not dilute the academic facts with the theme; only use the theme for examples or scenarios *after* explaining the core concept.
-
-TARGET CLASS: ${targetClassLevel.toUpperCase()} School.
-SUBJECT: ${subjectInput}
-CATEGORY: ${category.toUpperCase()}
-LESSON NOTE DEPTH: ${noteLength.toUpperCase()}
-
-TASK:
-1. Analyze the input.
-2. Generate a Lesson Note (Formatted with Markdown: ### for Headers, ** for bold, - for lists).
-3. Generate Game Assets.
-
-**SPECIAL HANDLING FOR UPLOADS:**
-- **Handwritten Notes**: Decode messy handwriting with high precision. Fix grammar/spelling errors from quick note-taking. Structure unstructured notes logically.
-- **Snapped Photos (Whiteboard/Textbook)**: If the image is skewed or has poor lighting, focus on extracting the textual content and key diagrams.
-- **Visuals**: If a diagram is detected in the input, describe it for the 'Illustrations' section.
-
-RULES FOR LESSON NOTE DEPTH (${noteLength}):
-- **Concise**: A brief summary (approx. 200 words).
-- **Standard**: A typical class note (approx. 500 words).
-- **Extensive**: A comprehensive deep-dive (approx. 1000+ words).
-
-RULES FOR ${targetClassLevel.toUpperCase()}:
-${targetClassLevel === 'primary' ? `
-- **Standard**: NERDC Primary Curriculum.
-- **Lesson Note**: 
-  - Structure: Introduction -> Core Concept -> Real World Example -> Summary.
-  - Tone: Educational, Encouraging, Clear.
-  - Use **Sensory Metaphors** to explain complex ideas, but ensure the scientific/academic definition is also provided simply.
-- **Game**: Playful, emojis, simple matching.
-- **Illustrations**: CRITICAL. Generate 4-6 detailed descriptions for pictographic cards.
-` : `
-- **Standard**: **NERDC / WAEC / JAMB Syllabus Precision**.
-- **Tone**: **Professional, objective-driven, boardroom-ready.** Focus on building "Academic Muscle".
-- **Lesson Note**: 
-  - Structure: **Specific Objectives** -> **Definitions** -> **Theoretical Analysis** -> **Calculations/Derivations** -> **Exam-Style Application**.
-  - **NO** playful slang. Use standard academic/exam terminology exclusively.
-  - Prioritize precision and depth suitable for external examinations.
-- **Game Assets**:
-  - **Flashcards**: **HIGH PRIORITY**. Focus on precise definitions, formulas, and theorems.
-  - **Logic Flowcharts**: Use the 'Matching' game to simulate logic flows (e.g., Left: "Step 1 of Analysis", Right: "Derive Hypothesis").
-  - **BOSS LEVEL**: You **MUST** include a final, high-difficulty level called "Boss Level".
-    - Type: Quiz or Fill-in-the-blanks.
-    - Challenge: A complex, multi-stage logic puzzle or case study requiring synthesis of the entire lesson.
-    - Content: "Syllabus Precision" - extremely accurate and challenging.
-`}
-
-RULES FOR ${category.toUpperCase()}:
-${category === 'quantitative' ? `
-- **MATH/SCIENCE**: You MUST use LaTeX format for ALL mathematical expressions.
-- Format inline math as $...$ and block math as $$...$$
-- Ensure formulas are correct.
-` : `
-- **QUALITATIVE**: Standard text.
-`}
-  `;
-
-  const parts: any[] = [{ text: refineryPrompt }];
-  
-  if (textInput) {
-      parts.push({ text: `Teacher Notes: ${textInput}` });
-  }
-  
-  if (fileInput) {
-      parts.push({
-          inlineData: {
-              mimeType: fileInput.mimeType,
-              data: fileInput.data
-          }
-      });
-  }
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: { parts: parts },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: curriculumSchema,
-      temperature: 0.3, // Lower temperature for more standard academic output
-      thinkingConfig: { thinkingBudget: 2048 } // High thinking budget for curriculum alignment
-    }
-  });
-
-  const text = response.text;
-  if (!text) throw new Error("No response from AI");
-
-  const data = JSON.parse(text);
-
-  // Transform into GameModule Levels
-  const levels: Level[] = [];
-  let levelCounter = 1;
-
-  // 1. Memory (Flashcards)
-  if (data.flashcards?.length > 0) {
-    levels.push({
-      id: `lvl_${levelCounter++}`,
-      title: targetClassLevel === 'primary' ? "Picture Cards" : "Core Definitions",
-      type: "flashcards",
-      points: 50,
-      challenge: targetClassLevel === 'primary' ? "Match the pictures!" : "Rapid recall of key syllabus terms",
-      flashcards: data.flashcards.map((f: any, i: number) => ({
-        id: `fc_${i}`,
-        front: f.front,
-        back: f.back
-      }))
-    });
-  }
-
-  // 2. Association (Matching) - Can serve as Logic Flow for Secondary
-  if (data.matching_pairs?.length > 0) {
-    levels.push({
-      id: `lvl_${levelCounter++}`,
-      title: targetClassLevel === 'primary' ? "Connect It" : "Logic Flow & Relations",
-      type: "matching",
-      points: 100,
-      challenge: targetClassLevel === 'primary' ? "Find the connections" : "Map the logical relationships",
-      pairs: data.matching_pairs.map((p: any, i: number) => ({
-        id: `pair_${i}`,
-        left: p.left,
-        right: p.right
-      }))
-    });
-  }
-
-  // 3. Application (Quiz) - Standard Levels
-  if (data.quiz_questions?.length > 0) {
-    // Take all but the last one if we want to save one for boss level, 
-    // BUT the prompt asks for a specific boss level structure. 
-    // We'll treat standard quiz questions as practice.
-    data.quiz_questions.forEach((q: any, i: number) => {
-      // Check if this looks like a boss level question based on length or complexity, 
-      // or just add them as standard challenges.
-      const isBossContext = q.context_scenario.toLowerCase().includes('boss') || q.context_scenario.toLowerCase().includes('mastery');
-      
-      levels.push({
-        id: `lvl_${levelCounter++}`,
-        title: isBossContext ? "BOSS LEVEL: Mastery" : `Application Phase ${i + 1}`,
-        type: "quiz",
-        points: isBossContext ? 150 : 20,
-        challenge: q.context_scenario,
-        question: q.question,
-        options: q.options.map((opt: string, idx: number) => ({
-          id: String.fromCharCode(97 + idx),
-          text: opt,
-          correct: (q.correct_option_letter || 'A').toLowerCase() === String.fromCharCode(97 + idx)
-        }))
-      });
-    });
-  }
-
-  // 4. Mastery (Fill in Blanks)
-  if (data.fill_in_blanks?.length > 0) {
-    data.fill_in_blanks.forEach((fib: any, i: number) => {
-      levels.push({
-        id: `lvl_${levelCounter++}`,
-        title: "Synthesis & Calculation",
-        type: "fill_blank",
-        points: 40,
-        challenge: fib.context,
-        sentence: fib.sentence,
-        correctAnswer: fib.answer
-      });
-    });
-  }
-  
-  // Force sort levels? Or rely on AI order? 
-  // We'll trust the AI order but if we see a "Boss Level" in title, we might want to ensure it's last.
-  // For now, simple array push preserves order generated by code logic.
-
-  const effectiveTemplate: GameTemplate = customContext ? {
-      ...template,
-      id: 'custom',
-      name: 'Custom Context',
-      theme: customContext,
-      bgColor: 'from-pink-600 to-rose-600'
-  } : template;
-
-  return {
-    id: `gen_${Date.now()}`,
-    title: data.lesson_note_title || `${subjectInput} Module`,
-    template: effectiveTemplate,
-    levels: levels,
-    metadata: {
-      createdAt: new Date().toISOString(),
-      difficulty: data.difficulty_level || 'medium',
-      estimatedTime: data.estimated_study_time || 15
-    },
-    subject: subjectInput,
-    grade: targetClassLevel === 'primary' ? 'Primary' : 'Secondary',
-    plays: 0,
-    avgScore: 0,
-    type: 'custom',
-    status: 'draft',
-    category: category,
-    lessonNote: data.lesson_note_content,
-    illustrations: data.illustrations,
-    classLevel: targetClassLevel
-  };
-};
-
-const generateMock = (content: string, template: GameTemplate, customContext?: string, targetClass?: ClassLevel, category?: ModuleCategory): Promise<GameModule> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const contextTheme = customContext || template.name;
-      const gameModule: GameModule = {
-        id: `gen_${Date.now()}`,
-        title: `${contextTheme} Demo`,
-        template: customContext ? { ...template, name: 'Custom', theme: customContext } : template,
-        subject: 'Demo Subject',
-        grade: targetClass === 'primary' ? 'Primary 3' : 'JSS 2',
-        plays: 0,
-        avgScore: 0,
-        type: 'custom',
-        status: 'draft',
-        category: category || 'qualitative',
-        lessonNote: `### Introduction to Photosynthesis
-Photosynthesis is the process by which green plants make their own food.
-
-### Key Concepts
-* **Chlorophyll**: The green pigment.
-* **Sunlight**: The energy source.
-
-### The Formula
-The chemical equation is:
-$$ 6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2 $$`,
-        illustrations: targetClass === 'primary' ? [
-            { description: "A happy sun smiling at a green leaf", caption: "Sunlight gives energy" },
-            { description: "Roots drinking water from soil", caption: "Roots drink water" }
-        ] : [],
-        classLevel: targetClass || 'secondary',
-        metadata: { createdAt: new Date().toISOString(), difficulty: 'medium', estimatedTime: 15 },
-        levels: [
-          {
-            id: 'l1',
-            title: 'Key Terms',
-            type: 'flashcards',
-            points: 50,
-            challenge: 'Review these terms',
-            flashcards: [
-              { id: '1', front: 'Photosynthesis', back: 'Process by which plants make food' },
-              { id: '2', front: 'Chlorophyll', back: 'Green pigment in plants' }
-            ]
-          },
-          {
-            id: 'l2',
-            title: 'Connect Concepts',
-            type: 'matching',
-            points: 100,
-            challenge: 'Match the term to its function',
-            pairs: [
-              { id: 'p1', left: 'Roots', right: 'Absorb water' },
-              { id: 'p2', left: 'Leaves', right: 'Capture sunlight' }
-            ]
-          }
-        ]
-      };
-      
-      resolve(gameModule);
-    }, 2000);
-  });
-};
-
-export const generateGameContent = async (
-    textInput: string, 
-    fileInput: { mimeType: string, data: string } | null,
-    template: GameTemplate, 
-    customContext: string | undefined,
-    targetClassLevel: ClassLevel,
-    subjectInput: string,
-    category: ModuleCategory = 'qualitative',
-    noteLength: NoteLength = 'standard'
-): Promise<GameModule> => {
-  try {
-    if (process.env.API_KEY) {
-      return await generateWithGemini(textInput, fileInput, template, customContext, targetClassLevel, subjectInput, category, noteLength);
-    }
-    return await generateMock(textInput, template, customContext, targetClassLevel, category);
-  } catch (error) {
-    console.error("AI Generation failed, falling back to mock:", error);
-    return await generateMock(textInput, template, customContext, targetClassLevel, category);
-  }
 };
