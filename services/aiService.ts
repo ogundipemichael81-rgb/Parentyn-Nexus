@@ -210,6 +210,38 @@ export const generateGameContent = async (
 
 // --- Specialized Generators ---
 
+export const getAiCodeHelp = async (context: string, code: string, error: string | null): Promise<string> => {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) return "AI Help Unavailable (No API Key)";
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const prompt = `
+        You are a friendly Python tutor for students.
+        Goal: Provide a short, helpful hint to fix the code. DO NOT give the full solution.
+        
+        Challenge Context: "${context}"
+        Student's Current Code:
+        \`\`\`python
+        ${code}
+        \`\`\`
+        Error Message (if any): "${error || "None, but the output is incorrect"}"
+
+        Output: A 2-3 sentence hint explaining what might be wrong or what to try next.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: prompt,
+            config: { temperature: 0.7 }
+        });
+        return response.text || "Try checking your syntax and logic again.";
+    } catch (e) {
+        return "Could not generate hint.";
+    }
+};
+
 export const extendLessonNote = async (currentNote: string, subject: string, classLevel: ClassLevel, instruction?: string): Promise<string> => {
     const apiKey = process.env.API_KEY;
     if (!apiKey) return "\n\n**Extension Failed:** No API Key available.";
@@ -376,6 +408,24 @@ export const generateSpecificLevel = async (
             },
             required: ["sequence_title", "steps"]
         };
+    } else if (activityType === 'lab') {
+        prompt += `\nGenerate a Python Coding Challenge (Lab).
+        1. Create a scenario involving data analysis, plotting, or a simple algorithm based on the topic.
+        2. Provide 'starterCode': runnable Python code with a missing part or a TODO comment for the student to fill.
+        3. Provide 'targetOutput': a unique string or number that MUST appear in the stdout for success.
+        4. Provide 'hints': 2 helpful hints.
+        `;
+        schema = {
+            type: Type.OBJECT,
+            properties: {
+                lab_title: { type: Type.STRING },
+                lab_challenge: { type: Type.STRING },
+                starterCode: { type: Type.STRING },
+                targetOutput: { type: Type.STRING },
+                hints: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["lab_title", "lab_challenge", "starterCode", "targetOutput", "hints"]
+        };
     } else if (activityType === 'quiz' || activityType === 'question_bank') {
         const count = activityType === 'question_bank' ? 5 : 3; 
         prompt += `\nGenerate ${count} distinct multiple choice questions. ${activityType === 'question_bank' ? 'Create a question bank covering different aspects of the note.' : 'Create a short assessment quiz.'}`;
@@ -483,6 +533,18 @@ export const generateSpecificLevel = async (
             points: 75,
             challenge: data.sequence_context || "Order the steps correctly.",
             steps: data.steps
+        });
+    }
+    if (data.starterCode) {
+        levels.push({
+            id: `lvl_lab_${timestamp}`,
+            title: data.lab_title || "Code Lab Challenge",
+            type: "lab",
+            points: 150,
+            challenge: data.lab_challenge || "Write the code to solve the problem.",
+            starterCode: data.starterCode,
+            targetOutput: data.targetOutput,
+            hints: data.hints
         });
     }
     if (data.fill_in_blanks) {

@@ -1,7 +1,7 @@
 
 export type ViewState = 'dashboard' | 'studio' | 'modules' | 'students';
 export type UserRole = 'teacher' | 'student';
-export type ActivityType = 'quiz' | 'flashcards' | 'matching' | 'fill_blank' | 'arrange';
+export type ActivityType = 'quiz' | 'flashcards' | 'matching' | 'fill_blank' | 'arrange' | 'lab';
 export type ClassLevel = 'primary' | 'secondary';
 export type ModuleCategory = 'qualitative' | 'quantitative';
 export type ModuleStatus = 'draft' | 'published';
@@ -72,6 +72,11 @@ export interface Level {
 
   // Arrange (Sequence)
   steps?: string[];
+
+  // Code Lab
+  starterCode?: string;
+  targetOutput?: string;
+  hints?: string[];
 }
 
 export interface ModuleMetadata {

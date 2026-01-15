@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle, ListOrdered, GripVertical } from 'lucide-react';
+import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle, ListOrdered, GripVertical, Terminal } from 'lucide-react';
 import { Level, Flashcard, MatchingPair } from '../types';
 import { RichTextRenderer } from './Shared';
+import { CodeLabChallenge } from './CodeLabChallenge';
 
 interface GameplayViewProps {
   level: Level;
@@ -19,6 +20,7 @@ export const GameplayView: React.FC<GameplayViewProps> = ({ level, onComplete })
         {level.type === 'matching' && <MatchingGame level={level} onComplete={onComplete} />}
         {level.type === 'fill_blank' && <FillBlankGame level={level} onComplete={onComplete} />}
         {level.type === 'arrange' && <ArrangeGame level={level} onComplete={onComplete} />}
+        {level.type === 'lab' && <CodeLabChallenge level={level} onComplete={onComplete} />}
       </div>
     </div>
   );
@@ -33,6 +35,7 @@ const Header: React.FC<{ level: Level }> = ({ level }) => {
       case 'matching': return Puzzle;
       case 'fill_blank': return PenTool;
       case 'arrange': return ListOrdered;
+      case 'lab': return Terminal;
       default: return HelpCircle;
     }
   };

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio, ListOrdered } from 'lucide-react';
+import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio, ListOrdered, Terminal } from 'lucide-react';
 import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level, Session } from '../types';
 import { GAME_TEMPLATES } from '../constants';
 import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote, processDocumentToNote } from '../services/aiService';
@@ -211,6 +211,28 @@ const LevelEditor: React.FC<{ level: Level; onSave: (l: Level) => void }> = ({ l
                ))}
                <p className="text-xs text-white/40 italic">Note: These will be shuffled for students.</p>
           </div>
+      )}
+
+      {editedLevel.type === 'lab' && (
+           <div className="space-y-4">
+                <div className="space-y-2">
+                    <label className="text-xs uppercase text-gray-400 font-bold">Starter Code</label>
+                    <textarea
+                        value={editedLevel.starterCode || ''}
+                        onChange={(e) => handleChange('starterCode', e.target.value)}
+                        className="w-full bg-black/20 border border-white/10 rounded-lg p-3 font-mono text-sm focus:border-yellow-400 outline-none h-32"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <label className="text-xs uppercase text-gray-400 font-bold">Target Output (Validation)</label>
+                    <input
+                        type="text"
+                        value={editedLevel.targetOutput || ''}
+                        onChange={(e) => handleChange('targetOutput', e.target.value)}
+                        className="w-full bg-black/20 border border-white/10 rounded-lg p-3 focus:border-yellow-400 outline-none"
+                    />
+                </div>
+           </div>
       )}
 
       <button
@@ -856,6 +878,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
       case 'matching': return <Puzzle className="w-4 h-4 text-green-300" />;
       case 'fill_blank': return <PenTool className="w-4 h-4 text-pink-300" />;
       case 'arrange': return <ListOrdered className="w-4 h-4 text-indigo-300" />;
+      case 'lab': return <Terminal className="w-4 h-4 text-slate-300" />;
       default: return <HelpCircle className="w-4 h-4 text-yellow-300" />;
     }
   };
@@ -867,6 +890,7 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
         case 'fill_blank': return "Mastery: Students apply knowledge to complete sentences or equations.";
         case 'quiz': return "Application: Students solve problems or answer scenarios.";
         case 'arrange': return "Logic & Sequence: Students order steps of a process chronologically.";
+        case 'lab': return "Code & Analyze: Students write Python code to solve a data problem.";
         default: return "";
       }
   };
@@ -1405,6 +1429,9 @@ const StudioView: React.FC<StudioViewProps> = ({ setGeneratedModule, generatedMo
                                              </button>
                                              <button onClick={() => handleAddAILevel('arrange')} className="w-full text-left px-3 py-2 text-white hover:bg-white/10 rounded-lg text-sm flex items-center gap-2">
                                                  <ListOrdered className="w-4 h-4 text-indigo-400" /> Arrange (Sequence)
+                                             </button>
+                                             <button onClick={() => handleAddAILevel('lab')} className="w-full text-left px-3 py-2 text-white hover:bg-white/10 rounded-lg text-sm flex items-center gap-2">
+                                                 <Terminal className="w-4 h-4 text-slate-400" /> Code Lab (Python)
                                              </button>
                                              <div className="h-px bg-white/10 my-1"></div>
                                              <button onClick={() => handleAddAILevel('boss_level')} className="w-full text-left px-3 py-2 text-white hover:bg-white/10 rounded-lg text-sm flex items-center gap-2">
