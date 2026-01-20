@@ -43,7 +43,7 @@ export const verifyContext = async (context: string): Promise<{approved: boolean
 
 export const generateGameContent = async (
     lessonText: string,
-    image: { mimeType: string, data: string } | null,
+    images: { mimeType: string, data: string }[],
     template: GameTemplate,
     customContext: string | undefined,
     classLevel: ClassLevel,
@@ -102,8 +102,11 @@ export const generateGameContent = async (
     `;
 
     const parts: any[] = [{ text: prompt }];
-    if (image) {
-        parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+    
+    if (images && images.length > 0) {
+        images.forEach(img => {
+            parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+        });
     }
 
     try {
@@ -199,7 +202,8 @@ export const generateGameContent = async (
             lessonNote: data.lessonNote || "",
             category,
             classLevel,
-            status: 'draft'
+            status: 'draft',
+            questionBank: []
         };
 
     } catch (e) {
@@ -343,6 +347,15 @@ export const generateSpecificLevel = async (
     subject: string,
     classLevel: ClassLevel
 ): Promise<Level[]> => {
+    // This function is kept for backward compatibility for 'Add AI Level', 
+    // but the specialized question bank logic will handle 'question_bank' better below.
+    // For now, if type is 'question_bank', we just redirect to a simple quiz gen or use the existing logic.
+    // The existing logic already handles 'question_bank' by generating quiz questions.
+    return generateGameContentLogic(activityType, lessonNote, subject, classLevel);
+};
+
+// Internal reusable logic
+const generateGameContentLogic = async (activityType: string, lessonNote: string, subject: string, classLevel: string): Promise<Level[]> => {
     const apiKey = process.env.API_KEY;
     if (!apiKey) throw new Error("No API Key");
 
@@ -580,4 +593,122 @@ export const generateSpecificLevel = async (
     }
 
     return levels;
+};
+
+// New function specifically for Question Bank generation
+export const generateQuestionBankContent = async (
+    count: number,
+    types: ('quiz' | 'theory' | 'fill_blank')[],
+    contextText: string, // Current note
+    files: { mimeType: string, data: string }[], // New uploaded material
+    subject: string,
+    level: string
+): Promise<Level[]> => {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) throw new Error("No API Key");
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    const instructions = `
+        You are an assessment expert for ${level} ${subject}.
+        Generate a Question Bank of ${count} questions based on the provided material.
+        
+        Rules:
+        1. Generate ONLY the requested types: ${types.join(', ')}.
+        2. Ensure variety and academic rigor.
+        3. For 'quiz' (Objective), provide 4 options.
+        4. For 'theory', provide a 'key_points' or model answer.
+        5. For 'fill_blank', provide the sentence with '___' and the answer.
+    `;
+
+    const prompt = `
+        Task: Create a Question Bank.
+        Material: "${contextText.substring(0, 5000)}" (and attached files if any).
+        
+        Output JSON Schema:
+        {
+            "questions": [
+                {
+                    "type": "quiz" | "theory" | "fill_blank",
+                    "question": "string",
+                    "options": ["string"] (only for quiz),
+                    "correct_option_letter": "A|B|C|D" (only for quiz),
+                    "answer": "string" (for theory/fill_blank model answer)
+                }
+            ]
+        }
+    `;
+
+    const parts: any[] = [{ text: instructions + "\n" + prompt }];
+    
+    if (files && files.length > 0) {
+        files.forEach(f => {
+            parts.push({ inlineData: { mimeType: f.mimeType, data: f.data } });
+        });
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: { parts },
+            config: {
+                responseMimeType: "application/json",
+                temperature: 0.8,
+            }
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No response");
+        const data = JSON.parse(text);
+        const questions: Level[] = [];
+        const timestamp = Date.now();
+
+        if (data.questions && Array.isArray(data.questions)) {
+            data.questions.forEach((q: any, i: number) => {
+                // Determine title based on type
+                const title = q.type === 'quiz' ? `Objective Q${i+1}` : q.type === 'theory' ? `Theory Q${i+1}` : `Gap Fill Q${i+1}`;
+                
+                if (q.type === 'quiz') {
+                    questions.push({
+                        id: `qb_${timestamp}_${i}`,
+                        title: title,
+                        type: 'quiz',
+                        points: 10,
+                        challenge: "Select the correct option.",
+                        question: q.question,
+                        options: q.options?.map((opt: string, idx: number) => ({
+                            id: String.fromCharCode(97 + idx),
+                            text: opt,
+                            correct: (q.correct_option_letter || 'A').toLowerCase() === String.fromCharCode(97 + idx)
+                        }))
+                    });
+                } else if (q.type === 'fill_blank') {
+                    questions.push({
+                        id: `qb_${timestamp}_${i}`,
+                        title: title,
+                        type: 'fill_blank',
+                        points: 10,
+                        challenge: "Complete the sentence.",
+                        sentence: q.question, // API might return sentence in 'question' field
+                        correctAnswer: q.answer
+                    });
+                } else if (q.type === 'theory') {
+                    questions.push({
+                        id: `qb_${timestamp}_${i}`,
+                        title: title,
+                        type: 'theory',
+                        points: 20,
+                        challenge: "Provide a detailed answer.",
+                        question: q.question,
+                        correctAnswer: q.answer // Model answer
+                    });
+                }
+            });
+        }
+        return questions;
+
+    } catch (e) {
+        console.error("QB Gen Error", e);
+        throw e;
+    }
 };

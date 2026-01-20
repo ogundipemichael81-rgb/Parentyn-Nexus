@@ -1,7 +1,7 @@
 
 export type ViewState = 'dashboard' | 'studio' | 'modules' | 'students';
 export type UserRole = 'teacher' | 'student';
-export type ActivityType = 'quiz' | 'flashcards' | 'matching' | 'fill_blank' | 'arrange' | 'lab';
+export type ActivityType = 'quiz' | 'flashcards' | 'matching' | 'fill_blank' | 'arrange' | 'lab' | 'theory';
 export type ClassLevel = 'primary' | 'secondary';
 export type ModuleCategory = 'qualitative' | 'quantitative';
 export type ModuleStatus = 'draft' | 'published';
@@ -66,9 +66,9 @@ export interface Level {
   // Matching
   pairs?: MatchingPair[];
 
-  // Fill in Blank
+  // Fill in Blank & Theory
   sentence?: string;
-  correctAnswer?: string;
+  correctAnswer?: string; // Used for theory model answer too
 
   // Arrange (Sequence)
   steps?: string[];
@@ -103,6 +103,7 @@ export interface GameModule {
   lessonNote?: string;
   illustrations?: Illustration[]; // For Primary
   classLevel?: ClassLevel;
+  questionBank?: Level[];
 }
 
 export interface Student {

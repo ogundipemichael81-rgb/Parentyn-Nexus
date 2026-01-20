@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle, ListOrdered, GripVertical, Terminal } from 'lucide-react';
+import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle, ListOrdered, GripVertical, Terminal, FileText } from 'lucide-react';
 import { Level, Flashcard, MatchingPair } from '../types';
 import { RichTextRenderer } from './Shared';
 import { CodeLabChallenge } from './CodeLabChallenge';
@@ -21,6 +21,7 @@ export const GameplayView: React.FC<GameplayViewProps> = ({ level, onComplete })
         {level.type === 'fill_blank' && <FillBlankGame level={level} onComplete={onComplete} />}
         {level.type === 'arrange' && <ArrangeGame level={level} onComplete={onComplete} />}
         {level.type === 'lab' && <CodeLabChallenge level={level} onComplete={onComplete} />}
+        {level.type === 'theory' && <TheoryGame level={level} onComplete={onComplete} />}
       </div>
     </div>
   );
@@ -36,6 +37,7 @@ const Header: React.FC<{ level: Level }> = ({ level }) => {
       case 'fill_blank': return PenTool;
       case 'arrange': return ListOrdered;
       case 'lab': return Terminal;
+      case 'theory': return FileText;
       default: return HelpCircle;
     }
   };
@@ -487,6 +489,55 @@ const ArrangeGame: React.FC<{ level: Level, onComplete: (c: boolean) => void }> 
              >
                  {checkStatus === 'error' ? 'Incorrect Order - Try Again' : 'Check My Order'}
              </button>
+        </div>
+    );
+};
+
+// 6. Theory Game
+const TheoryGame: React.FC<{ level: Level, onComplete: (c: boolean) => void }> = ({ level, onComplete }) => {
+    const [answer, setAnswer] = useState('');
+    const [showKey, setShowKey] = useState(false);
+
+    const handleSubmit = () => {
+        setShowKey(true);
+        // For theory, it's self-assessed or just completion based for this MVP
+        // In a real app, teacher would grade this later
+        setTimeout(() => onComplete(true), 5000); // Auto complete after 5s of reviewing key
+    };
+
+    return (
+        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/20 shadow-2xl">
+            <div className="text-xl text-white mb-6 font-medium leading-relaxed">
+                <RichTextRenderer content={level.question || ""} />
+            </div>
+            
+            <textarea
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                placeholder="Type your answer here..."
+                disabled={showKey}
+                className="w-full h-48 bg-black/20 border border-white/10 rounded-xl p-4 text-white placeholder-white/20 outline-none focus:border-yellow-400/50 resize-none font-mono text-sm leading-relaxed mb-6"
+            />
+
+            {!showKey ? (
+                <button
+                    onClick={handleSubmit}
+                    disabled={!answer.trim()}
+                    className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold rounded-xl disabled:opacity-50 shadow-lg"
+                >
+                    Submit Response
+                </button>
+            ) : (
+                <div className="animate-in fade-in slide-in-from-bottom-4">
+                    <div className="bg-green-500/10 border border-green-500/30 p-4 rounded-xl mb-4">
+                        <h4 className="text-green-400 font-bold text-xs uppercase tracking-wider mb-2">Model Answer / Key Points</h4>
+                        <div className="text-white/90 text-sm">
+                            <RichTextRenderer content={level.correctAnswer || "No answer key provided."} />
+                        </div>
+                    </div>
+                    <p className="text-center text-white/50 text-sm">Response saved. Proceeding...</p>
+                </div>
+            )}
         </div>
     );
 };
