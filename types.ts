@@ -1,5 +1,5 @@
 
-export type ViewState = 'dashboard' | 'studio' | 'modules' | 'students';
+export type ViewState = 'dashboard' | 'studio' | 'modules' | 'students' | 'exam_prep';
 export type UserRole = 'teacher' | 'student';
 export type ActivityType = 'quiz' | 'flashcards' | 'matching' | 'fill_blank' | 'arrange' | 'lab' | 'theory';
 export type ClassLevel = 'primary' | 'secondary';
@@ -77,6 +77,16 @@ export interface Level {
   starterCode?: string;
   targetOutput?: string;
   hints?: string[];
+
+  // Exam Prep Extensions
+  tags?: {
+    exam?: string;
+    year?: string;
+    topic?: string;
+    difficulty?: string;
+    teachingMode?: string;
+    markingGuide?: string;
+  };
 }
 
 export interface ModuleMetadata {

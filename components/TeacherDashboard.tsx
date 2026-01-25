@@ -7,6 +7,7 @@ import { sessionManager } from '../services/sessionManager';
 import { useSessionSync } from '../hooks/useSessionSync';
 import { NavButton, StatCard, Step, RichTextRenderer } from './Shared';
 import { GameplayView } from './GameplayView';
+import { ExamPrepView } from './ExamPrepView';
 
 interface TeacherDashboardProps {
   activeView: ViewState;
@@ -62,6 +63,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               onClick={() => { setActiveView('studio'); handleClearEdit(); }}
             />
             <NavButton 
+              icon={GraduationCap} 
+              label="WAEC/NECO/JAMB CBT" 
+              active={activeView === 'exam_prep'}
+              onClick={() => { setActiveView('exam_prep'); handleClearEdit(); }}
+            />
+            <NavButton 
               icon={BookOpen} 
               label="Module Library" 
               active={activeView === 'modules'}
@@ -108,6 +115,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             editingModule={editingModule}
             onClearEdit={handleClearEdit}
           />
+        )}
+        {activeView === 'exam_prep' && (
+            <ExamPrepView 
+                setModules={setModules}
+                modules={modules}
+                setActiveView={setActiveView}
+            />
         )}
         {activeView === 'modules' && (
             <ModulesView 

@@ -712,3 +712,135 @@ export const generateQuestionBankContent = async (
         throw e;
     }
 };
+
+export const generateExamQuestionBankContent = async (
+    count: number,
+    examType: string,
+    subject: string,
+    level: string,
+    year: string,
+    topic: string,
+    files: { mimeType: string, data: string }[]
+): Promise<Level[]> => {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) throw new Error("No API Key");
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    // Calculate Distribution
+    const quizCount = Math.round(count * 0.8);
+    const theoryCount = count - quizCount;
+
+    const instructions = `
+        You are an expert exam setter for ${examType} (West African Examinations Council / Joint Admissions).
+        Subject: ${subject} (${level}).
+        ${year ? `Year Focus: ${year}.` : ''}
+        ${topic ? `Topic Focus: ${topic}.` : ''}
+        
+        Task: Generate a balanced exam question bank.
+        Total Questions: ${count}.
+        Distribution: ~${quizCount} Objective (Multiple Choice) and ~${theoryCount} Theory.
+
+        Requirements for OBJECTIVE questions:
+        - Must include 4 options (A-D).
+        - Must include a "teachingMode" field selected from: "Socratic Hint", "Step-by-step", or "Exam Tip".
+        - "Socratic Hint": A question that guides to the answer without giving it.
+        - "Step-by-step": A brief method to solve.
+        - "Exam Tip": A trick or common pitfall to avoid.
+        
+        Requirements for THEORY questions:
+        - Must include a "markingGuide": A concise bulleted marking scheme.
+
+        General Requirements:
+        - Difficulty: "easy", "medium", or "hard".
+        - Topic: The specific sub-topic of the question.
+        
+        Output JSON Schema:
+        {
+            "questions": [
+                {
+                    "type": "quiz" | "theory",
+                    "question": "string",
+                    "options": ["string"] (only for quiz),
+                    "correct_option_letter": "A|B|C|D" (only for quiz),
+                    "answer": "string" (theory model answer),
+                    "teachingMode": "string" (only for quiz),
+                    "markingGuide": "string" (only for theory),
+                    "difficulty": "easy|medium|hard",
+                    "topic": "string"
+                }
+            ]
+        }
+    `;
+
+    const parts: any[] = [{ text: instructions }];
+    if (files && files.length > 0) {
+        files.forEach(f => {
+            parts.push({ inlineData: { mimeType: f.mimeType, data: f.data } });
+        });
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: { parts },
+            config: {
+                responseMimeType: "application/json",
+                temperature: 0.8,
+            }
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No response");
+        const data = JSON.parse(text);
+        const questions: Level[] = [];
+        const timestamp = Date.now();
+
+        if (data.questions && Array.isArray(data.questions)) {
+            data.questions.forEach((q: any, i: number) => {
+                const title = q.type === 'quiz' ? `Objective Q${i+1}` : `Theory Q${i+1}`;
+                const tags = {
+                    exam: examType,
+                    year: year || undefined,
+                    topic: q.topic,
+                    difficulty: q.difficulty,
+                    teachingMode: q.teachingMode,
+                    markingGuide: q.markingGuide
+                };
+
+                if (q.type === 'quiz') {
+                    questions.push({
+                        id: `exam_${timestamp}_${i}`,
+                        title: title,
+                        type: 'quiz',
+                        points: 10,
+                        challenge: "Select the correct option.",
+                        question: q.question,
+                        options: q.options?.map((opt: string, idx: number) => ({
+                            id: String.fromCharCode(97 + idx),
+                            text: opt,
+                            correct: (q.correct_option_letter || 'A').toLowerCase() === String.fromCharCode(97 + idx)
+                        })),
+                        tags: tags
+                    });
+                } else if (q.type === 'theory') {
+                    questions.push({
+                        id: `exam_${timestamp}_${i}`,
+                        title: title,
+                        type: 'theory',
+                        points: 20,
+                        challenge: "Provide a detailed answer.",
+                        question: q.question,
+                        correctAnswer: q.answer,
+                        tags: tags
+                    });
+                }
+            });
+        }
+        return questions;
+
+    } catch (e) {
+        console.error("Exam Gen Error", e);
+        throw e;
+    }
+};
