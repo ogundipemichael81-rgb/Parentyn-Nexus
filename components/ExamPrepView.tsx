@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, X, Settings, GraduationCap, ArrowRight, Loader2, Database, CheckCircle2 } from 'lucide-react';
+import { Upload, FileText, X, Settings, GraduationCap, ArrowRight, Loader2, Database, CheckCircle2, Clock } from 'lucide-react';
 import { GameModule, Level, ClassLevel } from '../types';
 import { generateExamQuestionBankContent } from '../services/aiService';
 import { GAME_TEMPLATES } from '../constants';
@@ -19,6 +19,8 @@ export const ExamPrepView: React.FC<ExamPrepViewProps> = ({ setModules, modules,
   const [uploadedFiles, setUploadedFiles] = useState<{name: string, type: string, base64: string}[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [questionCount, setQuestionCount] = useState(10);
+  const [timerEnabled, setTimerEnabled] = useState(true);
+  const [duration, setDuration] = useState(20); // Default duration (minutes)
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +44,12 @@ export const ExamPrepView: React.FC<ExamPrepViewProps> = ({ setModules, modules,
 
   const removeFile = (index: number) => {
       setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleQuestionCountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const count = parseInt(e.target.value) || 0;
+      setQuestionCount(count);
+      setDuration(count * 2); // Default estimate: 2 mins per question
   };
 
   const handleGenerate = async () => {
@@ -71,7 +79,8 @@ export const ExamPrepView: React.FC<ExamPrepViewProps> = ({ setModules, modules,
                   metadata: {
                       createdAt: new Date().toISOString(),
                       difficulty: 'hard',
-                      estimatedTime: Math.round(questions.length * 2) // ~2 min per question for exam rigour
+                      estimatedTime: duration, // Use configured duration
+                      timerEnabled: timerEnabled
                   },
                   subject: subject,
                   grade: level,
@@ -175,7 +184,7 @@ export const ExamPrepView: React.FC<ExamPrepViewProps> = ({ setModules, modules,
                             min={5}
                             max={50}
                             value={questionCount}
-                            onChange={(e) => setQuestionCount(parseInt(e.target.value) || 10)}
+                            onChange={handleQuestionCountChange}
                             className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-white focus:border-yellow-400 outline-none"
                         />
                     </div>
@@ -190,6 +199,35 @@ export const ExamPrepView: React.FC<ExamPrepViewProps> = ({ setModules, modules,
                         placeholder="e.g. Calculus, Organic Chemistry"
                         className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-white focus:border-yellow-400 outline-none"
                     />
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-white/5 mt-2 pt-4">
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={() => setTimerEnabled(!timerEnabled)}
+                            className={`w-12 h-6 rounded-full p-1 transition-colors ${timerEnabled ? 'bg-green-500' : 'bg-white/10'}`}
+                        >
+                            <div className={`w-4 h-4 rounded-full bg-white transition-transform ${timerEnabled ? 'translate-x-6' : ''}`}></div>
+                        </button>
+                        <span className="text-sm text-white font-bold flex items-center gap-2">
+                            <Clock className="w-4 h-4" /> Enable Exam Timer
+                        </span>
+                    </div>
+                    
+                    {timerEnabled && (
+                        <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
+                            <span className="text-xs text-white/50 uppercase font-bold">Duration:</span>
+                            <div className="flex items-center gap-2">
+                                <input 
+                                    type="number" 
+                                    value={duration}
+                                    onChange={(e) => setDuration(parseInt(e.target.value) || 0)}
+                                    className="w-20 bg-black/20 border border-white/10 rounded-lg p-2 text-center text-white font-mono font-bold focus:border-yellow-400 outline-none"
+                                />
+                                <span className="text-xs text-white/50">mins</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* 4. Uploads */}

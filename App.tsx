@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Zap, LogOut, Loader2 } from 'lucide-react';
 import { TeacherDashboard } from './components/TeacherDashboard';
@@ -21,6 +22,7 @@ export default function App() {
   // Overall App Auth State (Teacher OR Student)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('teacher');
+  const [currentStudentName, setCurrentStudentName] = useState<string>('');
   
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [modules, setModules] = useState<GameModule[]>(SAMPLE_MODULES);
@@ -87,6 +89,7 @@ export default function App() {
               setUserRole('student');
               setIsAuthenticated(true);
               setStudentActiveSessionId(code); // Track which session student is in
+              setCurrentStudentName(name);
               
               // 2. Join Session via Manager
               sessionManager.joinSession(code, name);
@@ -119,6 +122,7 @@ export default function App() {
       setActiveView('dashboard');
       setCurrentModule(null);
       setStudentActiveSessionId(undefined);
+      setCurrentStudentName('');
   };
 
   const handleGameComplete = (moduleId: string, score: number, totalPoints: number) => {
@@ -137,7 +141,7 @@ export default function App() {
 
     // 2. Update Student Stats (simplified for now)
     setStudents(prev => prev.map(s => {
-        if (s.id === 1) { 
+        if (s.name.toLowerCase() === currentStudentName.toLowerCase()) { 
              const newPlays = s.plays + 1;
              const currentTotal = s.avgScore * s.plays;
              const newAvg = Math.round((currentTotal + percentage) / newPlays);
@@ -183,7 +187,7 @@ export default function App() {
             
             <div className="flex items-center gap-4">
                 <span className="text-white/50 text-sm font-medium hidden md:inline-block">
-                    Logged in as <span className="text-white capitalize font-bold">{userRole === 'teacher' && teacher ? teacher.name : userRole}</span>
+                    Logged in as <span className="text-white capitalize font-bold">{userRole === 'teacher' && teacher ? teacher.name : (currentStudentName || 'Student')}</span>
                 </span>
                 <button
                   onClick={handleLogout}
@@ -222,6 +226,7 @@ export default function App() {
             setProgress={setStudentProgress}
             onGameComplete={handleGameComplete}
             activeSessionId={studentActiveSessionId}
+            studentName={currentStudentName}
           />
         )}
       </div>

@@ -1,12 +1,18 @@
-import { Session } from '../types';
+
+import { Session, CBTResult } from '../types';
 
 const DB_KEY = 'parentyn_mock_db_sessions';
+const ANALYTICS_KEY = 'parentyn_cbt_analytics';
 
 // Helper to simulate Socket Emit
 const notifyUpdate = () => {
     // Dispatch local event for same-tab updates
     window.dispatchEvent(new Event('session-update'));
     // LocalStorage automatically dispatches 'storage' event to OTHER tabs
+};
+
+const notifyAnalytics = () => {
+    window.dispatchEvent(new Event('analytics-update'));
 };
 
 const getDb = (): Session[] => {
@@ -128,5 +134,40 @@ export const sessionManager = {
       sessions[index].sync_state = 'finished';
       saveDb(sessions);
     }
+  },
+
+  // --- ANALYTICS FEATURES ---
+
+  saveCBTResult: (result: CBTResult) => {
+      const existing = sessionManager.getCBTResults();
+      existing.push(result);
+      localStorage.setItem(ANALYTICS_KEY, JSON.stringify(existing));
+      notifyAnalytics();
+  },
+
+  getCBTResults: (): CBTResult[] => {
+      try {
+          const stored = localStorage.getItem(ANALYTICS_KEY);
+          return stored ? JSON.parse(stored) : [];
+      } catch (e) { return []; }
+  },
+  
+  getWeakTopics: (): { topic: string, count: number }[] => {
+      const results = sessionManager.getCBTResults();
+      const topicCounts: Record<string, number> = {};
+      
+      results.forEach(r => {
+          r.wrongTopics.forEach(t => {
+              if (!t) return;
+              // Clean topic string
+              const cleanTopic = t.trim();
+              topicCounts[cleanTopic] = (topicCounts[cleanTopic] || 0) + 1;
+          });
+      });
+
+      return Object.entries(topicCounts)
+          .map(([topic, count]) => ({ topic, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5); // Top 5
   }
 };

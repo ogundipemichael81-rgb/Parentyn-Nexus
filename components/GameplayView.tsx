@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle, ListOrdered, GripVertical, Terminal, FileText } from 'lucide-react';
+import { Star, Check, X, ArrowRight, RotateCw, Layers, Puzzle, PenTool, HelpCircle, ListOrdered, GripVertical, Terminal, FileText, Lightbulb } from 'lucide-react';
 import { Level, Flashcard, MatchingPair } from '../types';
 import { RichTextRenderer } from './Shared';
 import { CodeLabChallenge } from './CodeLabChallenge';
@@ -74,6 +74,7 @@ const Header: React.FC<{ level: Level }> = ({ level }) => {
 const QuizGame: React.FC<{ level: Level, onComplete: (c: boolean) => void }> = ({ level, onComplete }) => {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [showHint, setShowHint] = useState(false);
 
   const handleSubmit = () => {
     setShowResult(true);
@@ -88,6 +89,27 @@ const QuizGame: React.FC<{ level: Level, onComplete: (c: boolean) => void }> = (
       <div className="text-xl text-white mb-6 font-medium leading-relaxed">
           <RichTextRenderer content={level.question || ""} />
       </div>
+
+      {level.tags?.teachingMode && (
+          <div className="mb-6">
+              <button 
+                onClick={() => setShowHint(!showHint)}
+                className="flex items-center gap-2 text-yellow-400 text-sm font-bold hover:text-yellow-300 transition"
+              >
+                  <Lightbulb className="w-4 h-4" /> 
+                  {showHint ? 'Hide Hint' : 'Show Hint'}
+              </button>
+              {showHint && (
+                  <div className="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-100 text-sm animate-in fade-in slide-in-from-top-1">
+                      <span className="font-bold uppercase text-[10px] text-yellow-500 block mb-1">
+                          {level.tags.teachingMode.includes('Socratic') ? 'Socratic Hint' : level.tags.teachingMode.includes('step') ? 'Method' : 'Exam Tip'}
+                      </span>
+                      <RichTextRenderer content={level.tags.teachingMode} />
+                  </div>
+              )}
+          </div>
+      )}
+
       <div className="space-y-3">
         {level.options?.map(option => (
           <button

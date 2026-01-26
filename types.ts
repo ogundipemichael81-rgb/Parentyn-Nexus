@@ -93,6 +93,7 @@ export interface ModuleMetadata {
   createdAt: string;
   difficulty: string;
   estimatedTime: number;
+  timerEnabled?: boolean; // New: For CBT Mode
 }
 
 export interface GameModule {
@@ -142,4 +143,15 @@ export interface Session {
   current_module_id?: string;
   current_level_index?: number;
   sync_state: 'waiting' | 'lesson_note' | 'playing' | 'paused' | 'finished';
+}
+
+export interface CBTResult {
+  id: string;
+  studentName: string;
+  moduleId: string;
+  moduleTitle: string;
+  score: number;
+  total: number;
+  wrongTopics: string[];
+  date: string;
 }

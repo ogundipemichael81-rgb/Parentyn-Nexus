@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, RotateCw, CheckCircle2, ArrowLeft, XCircle, Check, X, BookOpen, ChevronRight, Image as ImageIcon, Zap } from 'lucide-react';
+import { Play, RotateCw, CheckCircle2, ArrowLeft, XCircle, Check, X, BookOpen, ChevronRight, Image as ImageIcon, Zap, GraduationCap, Clock, AlertTriangle } from 'lucide-react';
 import { GameModule, StudentProgress, Level } from '../types';
 import { GameplayView } from './GameplayView';
 import { RichTextRenderer } from './Shared';
@@ -14,6 +14,7 @@ interface StudentDashboardProps {
   setProgress: (p: StudentProgress) => void;
   onGameComplete?: (moduleId: string, score: number, totalPoints: number) => void;
   activeSessionId?: string;
+  studentName?: string;
 }
 
 interface LevelResult {
@@ -21,36 +22,25 @@ interface LevelResult {
     correct: boolean;
     points: number;
     type: string;
+    topic?: string;
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ 
-  modules, currentModule, setCurrentModule, progress, setProgress, onGameComplete, activeSessionId 
+  modules, currentModule, setCurrentModule, progress, setProgress, onGameComplete, activeSessionId, studentName 
 }) => {
   const [currentLevelIndex, setCurrentLevelIndex] = useState(0);
   const [viewState, setViewState] = useState<'study' | 'play' | 'result' | 'waiting'>('study');
   const [score, setScore] = useState(0);
   const [results, setResults] = useState<LevelResult[]>([]);
+  
+  // Timer State
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Real-time synchronization hooks
-  // If activeSessionId is present (student joined via code), we listen to that session
-  // Otherwise we default to self-paced learning (undefined session)
-  // Note: activeSessionId comes from where the Student JOINED the code in App.tsx. 
-  // However, App.tsx passes `currentModule` but not `activeSessionId`. We need to fetch the session from where the user joined.
-  
-  // Actually, we can check if the student is currently IN a session via SessionManager or Props. 
-  // For now, let's assume if there's an active session in local storage for this browser, we use it.
   const [liveSessionCode, setLiveSessionCode] = useState<string | null>(null);
   const liveSession = useSessionSync(liveSessionCode || undefined);
 
-  // Check on mount if we are in a session (simple check for this demo)
   useEffect(() => {
-     // This logic would ideally come from a global context or App.tsx props
-     // For this implementation, we will check if App.tsx passed it, or infer it from local storage if available
-     // But App.tsx doesn't pass it yet. We'll rely on the parent component passing it if possible, 
-     // or we can hack it by finding the first active session we joined.
-     // *Self-correction*: For this specific request, `App.tsx` handles the join. 
-     // We will need to update App.tsx to pass the `activeSession` to `StudentDashboard`.
-     // IF props.activeSessionId is passed, use it.
      if (activeSessionId) {
          setLiveSessionCode(activeSessionId);
      }
@@ -81,11 +71,37 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       }
   }, [liveSession, modules, currentModule]);
 
+  // Timer Effect
+  useEffect(() => {
+      let interval: any;
+      if (viewState === 'play' && timeLeft !== null && timeLeft > 0) {
+          interval = setInterval(() => {
+              setTimeLeft((prev) => {
+                  if (prev !== null && prev <= 1) {
+                      clearInterval(interval);
+                      finishGame(score, results); // Force finish
+                      return 0;
+                  }
+                  return prev !== null ? prev - 1 : null;
+              });
+          }, 1000);
+      }
+      return () => clearInterval(interval);
+  }, [viewState, timeLeft, score, results]); // Added deps to ensure finishGame has fresh state
+
   const startGame = (module: GameModule) => {
     setCurrentModule(module);
     setCurrentLevelIndex(0);
     setScore(0);
     setResults([]);
+    
+    // Check Timer
+    if (module.metadata.timerEnabled && module.metadata.estimatedTime) {
+        setTimeLeft(module.metadata.estimatedTime * 60);
+    } else {
+        setTimeLeft(null);
+    }
+
     setViewState(module.lessonNote ? 'study' : 'play');
   };
 
@@ -101,15 +117,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           title: currentLevel.title,
           correct: correct,
           points: levelPoints,
-          type: currentLevel.type
+          type: currentLevel.type,
+          topic: currentLevel.tags?.topic
       }];
       setResults(newResults);
 
       // In Live Session, we DO NOT auto-advance if the teacher controls it
       if (liveSessionCode) {
-         // Maybe show a "Waiting for teacher..." message?
-         // For now, we just stay on the current screen or show a success overlay?
-         // Simpler: Just stay until teacher moves index.
+         // Stay until teacher moves index
       } else {
           // Self-paced
           if (currentLevelIndex < currentModule.levels.length - 1) {
@@ -123,9 +138,28 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   const finishGame = (finalScore: number, finalResults: LevelResult[]) => {
     setViewState('result');
-    if (currentModule && onGameComplete) {
+    setTimeLeft(null);
+    
+    // Analytics: Save CBT Results
+    if (currentModule) {
         const totalPossible = currentModule.levels.reduce((sum, l) => sum + l.points, 0);
-        onGameComplete(currentModule.id, finalScore, totalPossible);
+        const wrongTopics = finalResults.filter(r => !r.correct && r.topic).map(r => r.topic!) || [];
+        
+        // Save to DB
+        sessionManager.saveCBTResult({
+            id: Date.now().toString(),
+            studentName: studentName || 'Guest Student',
+            moduleId: currentModule.id,
+            moduleTitle: currentModule.title,
+            score: finalScore,
+            total: totalPossible,
+            wrongTopics: wrongTopics,
+            date: new Date().toISOString()
+        });
+
+        if (onGameComplete) {
+            onGameComplete(currentModule.id, finalScore, totalPossible);
+        }
     }
   };
 
@@ -134,6 +168,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     setViewState('study');
     setCurrentModule(null);
     setCurrentLevelIndex(0);
+    setTimeLeft(null);
+  };
+
+  const formatTime = (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // --- RENDERING ---
@@ -201,7 +242,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               {!liveSessionCode && (
                 <button 
-                    onClick={() => setViewState('play')}
+                    onClick={() => {
+                        setViewState('play');
+                        // Start Timer if needed (if going straight to play from note)
+                        if (currentModule.metadata.timerEnabled && currentModule.metadata.estimatedTime) {
+                            setTimeLeft(currentModule.metadata.estimatedTime * 60);
+                        }
+                    }}
                     className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 text-lg transition transform hover:scale-[1.01]"
                 >
                     I'm Ready to Play! <ChevronRight className="w-5 h-5" />
@@ -215,6 +262,21 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   if (viewState === 'result' && currentModule) {
     const totalPossiblePoints = currentModule.levels.reduce((sum, lvl) => sum + lvl.points, 0);
     const percentage = totalPossiblePoints > 0 ? Math.round((score / totalPossiblePoints) * 100) : 0;
+
+    // Analyze Weak Topics
+    const topicStats: Record<string, { total: number, missed: number }> = {};
+    results.forEach(r => {
+        if (r.topic) {
+            if (!topicStats[r.topic]) topicStats[r.topic] = { total: 0, missed: 0 };
+            topicStats[r.topic].total++;
+            if (!r.correct) topicStats[r.topic].missed++;
+        }
+    });
+    
+    const weakTopics = Object.entries(topicStats)
+        .filter(([_, stats]) => stats.missed > 0)
+        .map(([topic, stats]) => ({ topic, accuracy: Math.round(((stats.total - stats.missed) / stats.total) * 100) }))
+        .sort((a, b) => a.accuracy - b.accuracy); // Lowest accuracy first
 
     return (
       <div className="max-w-3xl mx-auto space-y-8 animate-in zoom-in duration-500 py-8">
@@ -242,6 +304,23 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
              </div>
         </div>
 
+        {weakTopics.length > 0 && (
+            <div className="bg-red-500/10 backdrop-blur-md rounded-2xl p-6 border border-red-500/30">
+                <div className="flex items-center gap-2 mb-4">
+                    <AlertTriangle className="w-5 h-5 text-red-400" />
+                    <h3 className="text-red-200 font-bold uppercase text-xs tracking-wider">Areas for Improvement</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {weakTopics.map((item, idx) => (
+                        <div key={idx} className="bg-black/20 p-3 rounded-lg flex justify-between items-center">
+                            <span className="text-white text-sm font-medium">{item.topic}</span>
+                            <span className="text-red-400 text-xs font-bold">{item.accuracy}% Accuracy</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
         <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
              <h3 className="text-white font-bold mb-4">Performance Assessment</h3>
              <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
@@ -253,7 +332,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             </div>
                             <div>
                                 <p className="text-white font-medium">{result.title}</p>
-                                <p className="text-xs text-purple-300 capitalize">{result.type}</p>
+                                <p className="text-xs text-purple-300 capitalize">{result.type} {result.topic ? `• ${result.topic}` : ''}</p>
                             </div>
                         </div>
                         <span className={`font-bold ${result.correct ? 'text-green-400' : 'text-red-400'}`}>
@@ -297,7 +376,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         <div className="flex items-center justify-between text-white/60 text-sm max-w-4xl mx-auto">
           {!liveSessionCode && <button onClick={quitGame} className="hover:text-white transition">Exit Game</button>}
           <span>Level {currentLevelIndex + 1} of {currentModule.levels.length}</span>
-          <span>Score: {score}</span>
+          <div className="flex gap-4">
+              {timeLeft !== null && (
+                  <span className={`font-mono font-bold flex items-center gap-1 ${timeLeft < 60 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
+                      <Clock className="w-4 h-4" /> {formatTime(timeLeft)}
+                  </span>
+              )}
+              <span>Score: {score}</span>
+          </div>
         </div>
         <GameplayView 
           key={activeLevel.id} 
@@ -309,8 +395,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   }
 
   // 4. Module Selection (Dashboard)
+  const cbtModules = modules.filter(m => m.type === 'custom' && m.questionBank && m.questionBank.length > 0);
+  const learningModules = modules.filter(m => !cbtModules.includes(m));
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-700">
+    <div className="space-y-8 animate-in fade-in duration-700">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-white mb-2">Your Learning Arena</h2>
@@ -322,34 +411,78 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {modules.map(module => (
-          <div key={module.id} className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 hover:bg-white/15 transition group hover:-translate-y-1 duration-300">
-            <div className="mb-4">
-              <div className="flex justify-between items-start">
-                <h3 className="text-xl font-bold text-white mb-2 group-hover:text-blue-300 transition-colors">{module.title}</h3>
-                <span className="text-xs px-2 py-1 bg-white/10 rounded text-purple-200">{module.subject}</span>
+      {/* CBT Practice Section */}
+      {cbtModules.length > 0 && (
+          <div>
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                  <GraduationCap className="w-6 h-6 text-yellow-400" /> CBT Practice Sets
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {cbtModules.map(module => (
+                      <div key={module.id} className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-white/10 hover:border-yellow-400/50 transition group hover:-translate-y-1 duration-300 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-4 opacity-10">
+                              <GraduationCap className="w-24 h-24 text-white" />
+                          </div>
+                          <div className="relative z-10">
+                              <h4 className="text-lg font-bold text-white mb-1 truncate">{module.title}</h4>
+                              <p className="text-purple-300 text-xs mb-4">{module.subject} • {module.grade}</p>
+                              
+                              <div className="flex flex-wrap gap-2 mb-6">
+                                  <span className="px-2 py-1 bg-white/10 rounded text-[10px] text-white flex items-center gap-1">
+                                      <Clock className="w-3 h-3" /> {module.metadata.estimatedTime}m
+                                  </span>
+                                  <span className="px-2 py-1 bg-white/10 rounded text-[10px] text-white">
+                                      {module.levels.length} Questions
+                                  </span>
+                              </div>
+
+                              <button
+                                  onClick={() => startGame(module)}
+                                  className="w-full py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg flex items-center justify-center gap-2 transition"
+                              >
+                                  Start Mock Exam
+                              </button>
+                          </div>
+                      </div>
+                  ))}
               </div>
-              <p className="text-purple-300 text-sm line-clamp-2">{module.template.theme}</p>
-              
-              <div className="mt-3 flex gap-2 text-xs text-purple-400">
-                 <span>{module.metadata.estimatedTime} mins</span>
-                 <span>•</span>
-                 <span className="capitalize">{module.metadata.difficulty}</span>
-                 <span>•</span>
-                 <span>{module.levels.length} Levels</span>
-              </div>
-            </div>
-            
-            <button
-              onClick={() => startGame(module)}
-              className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition shadow-lg group-hover:shadow-green-500/20"
-            >
-              <Play className="w-5 h-5 fill-white" />
-              Start Playing
-            </button>
           </div>
-        ))}
+      )}
+
+      {/* Standard Modules Section */}
+      <div>
+          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <BookOpen className="w-6 h-6 text-blue-400" /> Interactive Lessons
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {learningModules.map(module => (
+              <div key={module.id} className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 hover:bg-white/15 transition group hover:-translate-y-1 duration-300">
+                <div className="mb-4">
+                  <div className="flex justify-between items-start">
+                    <h3 className="text-xl font-bold text-white mb-2 group-hover:text-blue-300 transition-colors">{module.title}</h3>
+                    <span className="text-xs px-2 py-1 bg-white/10 rounded text-purple-200">{module.subject}</span>
+                  </div>
+                  <p className="text-purple-300 text-sm line-clamp-2">{module.template.theme}</p>
+                  
+                  <div className="mt-3 flex gap-2 text-xs text-purple-400">
+                    <span>{module.metadata.estimatedTime} mins</span>
+                    <span>•</span>
+                    <span className="capitalize">{module.metadata.difficulty}</span>
+                    <span>•</span>
+                    <span>{module.levels.length} Levels</span>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => startGame(module)}
+                  className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition shadow-lg group-hover:shadow-green-500/20"
+                >
+                  <Play className="w-5 h-5 fill-white" />
+                  Start Playing
+                </button>
+              </div>
+            ))}
+          </div>
       </div>
     </div>
   );

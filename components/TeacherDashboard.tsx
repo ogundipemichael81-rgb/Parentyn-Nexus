@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio, ListOrdered, Terminal } from 'lucide-react';
+import { BookOpen, Zap, Trophy, Upload, BarChart3, Users, Check, Star, Flame, Play, Layers, Puzzle, PenTool, HelpCircle, AlertCircle, Loader2, FileText, Image as ImageIcon, X, Settings, Layout, MoreHorizontal, GraduationCap, Clock, Save, Eye, ArrowRight, Trash2, Edit2, FileDigit, TextQuote, AlignLeft, AlignJustify, FilePlus, PlusCircle, RotateCcw, ChevronDown, Database, Sparkles, CheckSquare, Square, Maximize2, Plus, GripVertical, Camera, Power, Copy, ArrowUp, ArrowDown, Radio, ListOrdered, Terminal, TrendingDown } from 'lucide-react';
 import { GameModule, ViewState, ActivityType, Student, ClassLevel, ModuleCategory, NoteLength, Level, Session } from '../types';
 import { GAME_TEMPLATES } from '../constants';
 import { generateGameContent, verifyContext, generateSpecificLevel, extendLessonNote, processDocumentToNote, generateQuestionBankContent } from '../services/aiService';
@@ -136,7 +136,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   );
 };
 
-// --- Sub Components ---
+// ... Sub Components ... (LevelEditor, ModulesView, StudentsView retained implicitly, explicitly overriding DashboardView)
 
 const LevelEditor: React.FC<{ level: Level; onSave: (l: Level) => void }> = ({ level, onSave }) => {
   const [editedLevel, setEditedLevel] = useState<Level>({ ...level });
@@ -280,7 +280,6 @@ const LevelEditor: React.FC<{ level: Level; onSave: (l: Level) => void }> = ({ l
   );
 };
 
-// ... ModulesView, StudentsView, DashboardView omitted slightly for brevity but included in full file logic ...
 const ModulesView: React.FC<{ modules: GameModule[], setCurrentModule: (m: GameModule | null) => void, onEdit: (m: GameModule) => void }> = ({ modules, onEdit }) => {
     return (
         <div className="space-y-6">
@@ -378,6 +377,19 @@ const DashboardView: React.FC<{
     onEndSession?: (code: string) => void;
     teacherName?: string;
 }> = ({ modules, activeSession, onCreateSession, onEndSession, teacherName }) => {
+  const [weakTopics, setWeakTopics] = useState<{topic: string, count: number}[]>([]);
+
+  // Load analytics
+  useEffect(() => {
+      // Initial Load
+      setWeakTopics(sessionManager.getWeakTopics());
+
+      // Listen for updates
+      const handleUpdate = () => setWeakTopics(sessionManager.getWeakTopics());
+      window.addEventListener('analytics-update', handleUpdate);
+      return () => window.removeEventListener('analytics-update', handleUpdate);
+  }, []);
+
   const publishedModules = modules.filter(m => m.status === 'published' || !m.status);
   const totalPlays = publishedModules.reduce((sum, m) => sum + (m.plays || 0), 0);
   const avgScore = publishedModules.length > 0 
@@ -558,38 +570,76 @@ const DashboardView: React.FC<{
         <StatCard icon={Trophy} label="Global Avg" value={`${avgScore}%`} color="yellow" />
       </div>
 
-      <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
-        <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-white">Recent Activity Log</h3>
-            <MoreHorizontal className="text-white/50 w-5 h-5 cursor-pointer" />
-        </div>
-        <div className="space-y-1">
-            <div className="grid grid-cols-12 text-xs text-purple-300 uppercase font-semibold pb-2 border-b border-white/10 px-4">
-                <div className="col-span-6">Module Name</div>
-                <div className="col-span-2 text-right">Plays</div>
-                <div className="col-span-2 text-right">Avg Score</div>
-                <div className="col-span-2 text-right">Status</div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         {/* Recent Activity */}
+         <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-white">Recent Activity Log</h3>
+                <MoreHorizontal className="text-white/50 w-5 h-5 cursor-pointer" />
             </div>
-          {modules.slice(0, 5).map(module => (
-            <div key={module.id} className="grid grid-cols-12 items-center py-3 px-4 hover:bg-white/5 transition border-b border-white/5 last:border-0">
-              <div className="col-span-6">
-                <p className="text-white font-medium text-sm">{module.title}</p>
-                <p className="text-xs text-purple-400">{module.subject} • {module.grade}</p>
-              </div>
-              <div className="col-span-2 text-right text-white font-mono text-sm">{module.plays}</div>
-              <div className="col-span-2 text-right text-green-400 font-mono text-sm">{module.avgScore}%</div>
-              <div className="col-span-2 text-right">
-                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${module.status === 'draft' ? 'bg-yellow-500' : 'bg-green-500'}`}></span>
-                <span className="text-xs text-white/70 capitalize">{module.status || 'Published'}</span>
-              </div>
+            <div className="space-y-1">
+                <div className="grid grid-cols-12 text-xs text-purple-300 uppercase font-semibold pb-2 border-b border-white/10 px-4">
+                    <div className="col-span-6">Module Name</div>
+                    <div className="col-span-2 text-right">Plays</div>
+                    <div className="col-span-2 text-right">Avg</div>
+                    <div className="col-span-2 text-right">Status</div>
+                </div>
+              {modules.slice(0, 5).map(module => (
+                <div key={module.id} className="grid grid-cols-12 items-center py-3 px-4 hover:bg-white/5 transition border-b border-white/5 last:border-0">
+                  <div className="col-span-6">
+                    <p className="text-white font-medium text-sm truncate">{module.title}</p>
+                    <p className="text-xs text-purple-400">{module.subject} • {module.grade}</p>
+                  </div>
+                  <div className="col-span-2 text-right text-white font-mono text-sm">{module.plays}</div>
+                  <div className="col-span-2 text-right text-green-400 font-mono text-sm">{module.avgScore}%</div>
+                  <div className="col-span-2 text-right">
+                    <span className={`inline-block w-2 h-2 rounded-full mr-2 ${module.status === 'draft' ? 'bg-yellow-500' : 'bg-green-500'}`}></span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+         </div>
+
+         {/* Weak Topics Card */}
+         <div className="bg-gradient-to-br from-red-900/40 to-orange-900/40 backdrop-blur-md rounded-2xl p-6 border border-white/10">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <TrendingDown className="w-5 h-5 text-red-400" /> Weak Topics This Week
+                </h3>
+                <span className="text-xs text-white/40 uppercase tracking-widest font-bold">Live CBT Data</span>
+            </div>
+            
+            {weakTopics.length > 0 ? (
+                <div className="space-y-4">
+                    {weakTopics.map((item, idx) => (
+                        <div key={idx} className="bg-black/20 p-3 rounded-lg flex items-center justify-between border border-white/5">
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-bold text-red-400 w-4 text-center">{idx + 1}.</span>
+                                <span className="text-white font-medium text-sm">{item.topic}</span>
+                            </div>
+                            <span className="text-xs font-bold bg-red-500/20 text-red-300 px-2 py-1 rounded">
+                                {item.count} Struggles
+                            </span>
+                        </div>
+                    ))}
+                    <div className="mt-4 pt-4 border-t border-white/10 text-center">
+                        <p className="text-xs text-white/50 italic">Recommended Action: Generate a remedial "Flashcard" module for these topics.</p>
+                    </div>
+                </div>
+            ) : (
+                <div className="h-40 flex flex-col items-center justify-center text-white/30 text-center">
+                    <CheckSquare className="w-8 h-8 mb-2" />
+                    <p>No weak spots detected yet.</p>
+                    <p className="text-xs">Wait for students to complete CBT modules.</p>
+                </div>
+            )}
+         </div>
       </div>
     </div>
   );
 };
 
+// ... StudioView (unchanged) ...
 interface StudioViewProps {
   setGeneratedModule: React.Dispatch<React.SetStateAction<GameModule | null>>;
   generatedModule: GameModule | null;
